@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bindNamed, createDatabase, postgresConfig } from '../src/platform/postgres.js';
+import { poolFalso } from './fixtures/pool-falso.mjs';
 
 test('parametros repetidos mantienen su posicion y valores no entran al SQL', () => {
   const attack = "'); DROP TABLE cuentas;--";
@@ -20,41 +21,28 @@ test('rechaza parametros ausentes, undefined, heredados, mezcla de estilos y SQL
   assert.throws(() => bindNamed('SELECT $1, @x', { x: 2 }), /No mezclar/);
   assert.deepEqual(bindNamed('SELECT @x', { x: null }).values, [null]);
 });
-function fakePool(failAt = []) {
-  const calls = [], releases = [];
-  const client = {
-    async query(query) {
-      const text = typeof query === 'string' ? query : query.text;
-      calls.push(text);
-      if (failAt.includes(text)) throw new Error(text);
-      return { rows: [{ ok: true }] };
-    },
-    release(error) { releases.push(error); },
-  };
-  return { pool: { async connect() { return client; } }, calls, releases };
-}
 test('transaccion ejecuta todo con el mismo cliente y libera despues de commit', async () => {
-  const f = fakePool();
+  const f = poolFalso();
   const value = await createDatabase(f.pool).transaction(async tx => {
     await tx.query('SELECT @n', { n: 5 }); return 7;
   });
   assert.equal(value, 7);
-  assert.deepEqual(f.calls, ['BEGIN', 'SELECT $1', 'COMMIT']);
-  assert.deepEqual(f.releases, [undefined]);
+  assert.deepEqual(f.textos(), ['BEGIN', 'SELECT $1', 'COMMIT']);
+  assert.deepEqual(f.liberaciones, [undefined]);
 });
 for (const stage of ['BEGIN', 'SELECT $1', 'COMMIT']) {
   test(`rollback y liberacion cuando falla ${stage}`, async () => {
-    const f = fakePool([stage]);
+    const f = poolFalso([stage]);
     await assert.rejects(createDatabase(f.pool).transaction(tx => tx.query('SELECT @n', { n: 1 })), { message: stage });
-    assert.equal(f.calls.at(-1), 'ROLLBACK');
-    assert.equal(f.releases.length, 1);
+    assert.equal(f.textos().at(-1), 'ROLLBACK');
+    assert.equal(f.liberaciones.length, 1);
   });
 }
 test('fallo del rollback descarta conexion y conserva el error original', async () => {
-  const f = fakePool(['SELECT $1', 'ROLLBACK']);
+  const f = poolFalso(['SELECT $1', 'ROLLBACK']);
   await assert.rejects(createDatabase(f.pool).transaction(tx => tx.query('SELECT @n', { n: 1 })), { message: 'SELECT $1' });
-  assert.equal(f.releases.length, 1);
-  assert.equal(f.releases[0].message, 'ROLLBACK');
+  assert.equal(f.liberaciones.length, 1);
+  assert.equal(f.liberaciones[0].message, 'ROLLBACK');
 });
 test('configuracion dedicada impide usar por accidente DATABASE_URL o PGHOST', () => {
   assert.throws(() => postgresConfig({ DATABASE_URL: 'postgres://legacy', PGHOST: 'legacy' }), /Configurar TECNIFIN_PG/);

@@ -31,6 +31,8 @@ con aislamiento de datos garantizado por el motor y no por la disciplina de quie
 
 - Modelo de multi-tenencia: identificación del tenant, aislamiento, modelo de datos y nomenclatura (apartados 4-8).
 - El DDL de las **30 tablas** de `db/gutt_system/01-09` traducido a `db/migrations/` (DAT-01, semana 2).
+  **Hecho:** 10 migraciones, **31 tablas** (las 30 menos `SecuenciaDPF`, mas `parametros_plataforma` y
+  `secuencias_tenant`), 31 politicas RLS. Ver ADR-0003, seccion "Resultado de DAT-01".
 - Catálogos regulatorios sembrados desde `db/seeds/` (semana 3).
 - Prueba de aislamiento entre dos cooperativas y prueba de partida doble, en verde en CI (semanas 3-4).
 - Fábrica de datos de dos cooperativas (semana 4).
@@ -180,14 +182,17 @@ archivo están ahí y son el alcance exacto de DAT-01.
 
 Lo que un lector del acta necesita saber sin abrir el ADR:
 
-- **30 tablas**, nombres de negocio en español, identificadores físicos en `snake_case`, esquema `tecnifin`.
+- **31 tablas** (las 30 del inventario menos `SecuenciaDPF`, más `parametros_plataforma` y
+  `secuencias_tenant`), nombres de negocio en español, identificadores físicos en `snake_case`, esquema
+  `tecnifin`.
 - **Dinero en `numeric(18,2)`**; nunca coma flotante.
 - **Momentos en `timestamptz(0)`, fechas de negocio en `date`**: una fecha contable no tiene zona horaria, y
   confundirlas mueve asientos de período.
-- **Hoy solo 13 de las 30 tablas llevan `cooperativa_id`.** Las otras 17 lo heredan por FK y **todas lo
-  reciben**: una política RLS no puede filtrar por una columna que no existe. Es el trabajo con más riesgo de
-  omisión de DAT-01 y por eso la prueba de catálogo (ADR-0002, prueba 1) recorre el diccionario en vez de
-  confiar en una lista.
+- **En el esquema viejo solo 13 de las 30 tablas llevan `CooperativaId`.** Las otras 17 lo heredan por FK y
+  **todas lo reciben**: una política RLS no puede filtrar por una columna que no existe. Era el trabajo con
+  más riesgo de omisión de DAT-01, y por eso la prueba de catálogo (ADR-0002, prueba 1) recorre el
+  diccionario en vez de confiar en una lista. **Hecho:** en TECNIFIN lo llevan las 31 tablas menos
+  `parametros_plataforma`, que es el único catálogo global.
 - **Los datos regulatorios son datos.** Bandas de antigüedad SEPS leídas del plan de cuentas por familia
   (`1402` corta distinto que `1422`, y `1423`/`1427` tienen seis bandas); ponderaciones y parámetros de
   patrimonio técnico en tablas. Ninguna constante de banda en el código.
@@ -329,11 +334,12 @@ Del plan, más lo que estos tres ADR agregan:
 
 - [ ] ADR-0001, ADR-0002 y ADR-0003 **aprobados por acta**, con la firma expresa de Christian Cuenca en
       ADR-0002 (y en los apartados 6, 12 y 13 de este documento). Sin aprobación por silencio.
-- [ ] DAT-01 aplicado: **30 tablas** en `tecnifin_dev`, `npm run migrate` sin pendientes ni alteradas.
-- [ ] Prueba de aislamiento entre dos cooperativas **sin una sola filtración** (ADR-0002, pruebas 1-8).
-- [ ] Partida doble cuadrada dentro de cada tenant.
+- [x] DAT-01 aplicado: **31 tablas** en `tecnifin_dev`, `npm run migrate` sin pendientes ni alteradas.
+- [x] Prueba de aislamiento entre dos cooperativas **sin una sola filtración** (ADR-0002, pruebas 1-8):
+      `tests/aislamiento.integration.test.mjs`, contra base efímera con las migraciones aplicadas.
+- [x] Partida doble cuadrada dentro de cada tenant, exigida por el motor (trigger de restricción diferido).
 - [ ] Catálogos regulatorios sembrados y **leídos de la tabla**, no del código (ADR-0003, pruebas 6 y 7).
-- [ ] Fábrica de datos de dos cooperativas, usable por todos los módulos.
+- [x] Fábrica de datos de dos cooperativas, usable por todos los módulos: `tests/fixtures/cooperativas.mjs`.
 - [ ] `npm test` de TECNIFIN en verde en CI; `npm test` de **GUTT_SYSTEM sigue en verde (55 pruebas)**: prueba
       de que el legado no se tocó.
 - [ ] Línea base de rendimiento registrada en este documento (apartado 13).
@@ -362,8 +368,10 @@ Ninguna se decide en ingeniería. Listadas aquí para el acta; el detalle está 
 
 **Para Jorge Tuquinga** (Desarrollo / negocio):
 
-9. **Numeración de socios y de cuentas**: ¿correlativo por cooperativa desde 1, o se conserva la numeración que
-   cada cooperativa ya tiene? — ADR-0001 §PA3. *Afecta DAT-01 y MIG-01.*
+9. ~~**Numeración de socios y de cuentas**~~ — **RESUELTA por Jorge el 2026-09-20: correlativo por
+   cooperativa desde 1.** No se conserva la numeración anterior; se guarda en una columna aparte para MIG-01.
+   Implementada en `db/migrations/0001_plataforma.sql`. *Consecuencia para la fase 3: el número de socio
+   cambia al migrar y hay que acordar con la cooperativa cómo se comunica.*
 10. **Sucursales**: ¿alguna cooperativa objetivo tiene más de una oficina con caja propia? — ADR-0001 §PA4.
     *Si la respuesta es sí, entra al modelo en DAT-01; después cuesta una migración.*
 11. **Precisión de las tasas**: ¿dos decimales o cuatro? — ADR-0003 §PA1. *Cambia las amortizaciones y el

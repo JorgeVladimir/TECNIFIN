@@ -14,11 +14,18 @@ El sistema vigente (GUTT_SYSTEM, SQL Server `SQLGUTPATATE`, `server.js`) **no se
 
 ```bash
 npm install            # una vez
-npm run db:init        # crea rol y base LOCALES (usa TECNIFIN_PG_ADMIN_PASSWORD de .env)
-npm run migrate        # estado; sale con 1 si hay pendientes
+npm run db:init        # crea los DOS roles y la base LOCALES (usa TECNIFIN_PG_ADMIN_PASSWORD, la del superusuario)
+npm run migrate        # estado; sale con 1 si hay pendientes. Corre como tecnifin_admin
 npm run migrate:apply  # aplica lo pendiente, en orden, transaccional, con SHA-256
-npm test               # unitarias + higiene (las reglas de abajo, comprobadas con código)
+npm test               # unitarias + higiene + aislamiento (crea y borra su propia base efímera)
+npm run test:aislamiento  # solo la prueba de aislamiento entre dos cooperativas
 ```
+
+**Dos roles, y no se mezclan** (ADR-0002): `tecnifin_admin` es dueño del esquema y el único que hace DDL
+(`TECNIFIN_PG_ADMIN_USER` / `TECNIFIN_PG_ADMIN_DB_PASSWORD`); `tecnifin_app` es el de la aplicación, solo
+DML, no es dueño de nada y no tiene `BYPASSRLS` (`TECNIFIN_PG_USER` / `TECNIFIN_PG_PASSWORD`).
+`TECNIFIN_PG_ADMIN_PASSWORD` es la clave del superusuario `postgres` y solo la usan `db:init` y las pruebas
+de integración, que crean y borran su propia base.
 
 Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero credenciales aquí**.
 
@@ -65,3 +72,18 @@ Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero creden
 
 Fase 0 (creación del proyecto) en curso. Primer hito: **H1**, modelo de base multi-tenant en PostgreSQL,
 aceptado por acta el **30-oct-2026**.
+
+**DAT-01 construido** (borrador, pendiente de acta): 10 migraciones en `db/migrations/`, **31 tablas** con
+`FORCE ROW LEVEL SECURITY` sin excepciones, `withTenant()` en `src/platform/tenant.js`, fábrica de dos
+cooperativas en `tests/fixtures/` y prueba de aislamiento contra base efímera. El patrón de traducción
+—mapeo de nombres, consulta antes/después, qué probar— está en
+**`docs/patrones/01-plataforma-multitenant.md`**: se lee antes de portar cualquier módulo y no se re-deriva.
+
+Toda migración que agregue una tabla llama a `SELECT tecnifin.aplicar_rls('tecnifin.<tabla>')`.
+No es una convención que haya que recordar: `migrate.mjs` corre `tecnifin.verificar_invariantes()` después
+de cada migración y dentro de su transacción, así que una tabla sin tenant, sin RLS, sin `FORCE`, sin
+política o con una FK sin índice **no llega a existir**.
+
+Los ADR-0001/0002/0003 siguen en **propuesta**: Christian Cuenca no los ha revisado y ADR-0002 no se aprueba
+por silencio. Tres supuestos de DAT-01 esperan respuesta de Jorge (sucursales, precisión de tasas, formato
+de los códigos visibles): están en ADR-0003, sección «Supuestos pendientes».

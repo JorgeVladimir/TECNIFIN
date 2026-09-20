@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { REPO_ROOT } from './_env.mjs';
+import { REPO_ROOT, entornoAdmin } from './_env.mjs';
 import { connectPostgres } from '../src/platform/postgres.js';
 
 const apply = process.argv.includes('--aplicar');
@@ -16,6 +16,20 @@ const files = readdirSync(dir).filter(f => /^\d+_.*\.sql$/.test(f))
     const text = readFileSync(join(dir, name), 'utf8');
     return { name, text, hash: createHash('sha256').update(text, 'utf8').digest('hex') };
   });
+
+// Los invariantes del modelo (cooperativa_id, RLS, FORCE, politica, indice por FK, cero
+// SECURITY DEFINER) se exigen despues de CADA migracion y dentro de su transaccion: una
+// tabla nueva que olvide tecnifin.aplicar_rls() no llega a existir. La regla vive en el
+// esquema (db/migrations/0001), no aqui: aqui solo se decide cuando se aplica.
+async function verificarInvariantes(tx, nombre) {
+  const disponible = await tx.query("SELECT to_regprocedure('tecnifin.verificar_invariantes()') IS NOT NULL AS ok");
+  if (!disponible.rows[0].ok) return;
+  const problemas = await tx.query('SELECT objeto, problema FROM tecnifin.verificar_invariantes() ORDER BY objeto');
+  if (problemas.rowCount) {
+    const detalle = problemas.rows.map(f => `${f.objeto}: ${f.problema}`).join('; ');
+    throw new Error(`${nombre} rompe los invariantes del esquema -> ${detalle}`);
+  }
+}
 
 function compare(rows) {
   const known = new Map(files.map(f => [f.name, f]));
@@ -29,7 +43,9 @@ function compare(rows) {
 
 let db;
 try {
-  db = connectPostgres();
+  // Las migraciones corren como tecnifin_admin, el dueno del esquema. La aplicacion no
+  // hace DDL y por eso tampoco necesita ser duena de sus tablas (ADR-0002, punto 1).
+  db = connectPostgres(entornoAdmin());
   const version = await db.query("SELECT current_setting('server_version_num')::integer AS version");
   if (version.rows[0].version < 150000) throw new Error('Requiere PostgreSQL 15 o superior');
   const exists = await db.query("SELECT to_regclass('public.tecnifin_schema_migrations') IS NOT NULL AS exists");
@@ -55,6 +71,7 @@ try {
         if (!compare(current.rows).some(f => f.name === file.name)) return false;
         const start = Date.now();
         await tx.query(file.text);
+        await verificarInvariantes(tx, file.name);
         await tx.query(`INSERT INTO public.tecnifin_schema_migrations (file_name, content_hash, duration_ms)
           VALUES (@name, @hash, @ms)`, { name: file.name, hash: file.hash, ms: Date.now() - start });
         return true;

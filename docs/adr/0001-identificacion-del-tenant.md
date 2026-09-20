@@ -77,7 +77,11 @@ Verificados en los archivos, no supuestos:
 4. **La unicidad de negocio se vuelve unicidad por tenant.** Se corrigen los cinco hallazgos de arriba:
    - `usuarios`: PK subrogada `bigint`; el nombre de acceso pasa a `UNIQUE (cooperativa_id, login)`.
    - `cuentas`: `UNIQUE (cooperativa_id, numero_cuenta)` en lugar del único global.
-   - numeración de socios: por cooperativa, no con una secuencia compartida (ver "Pregunta abierta 3").
+   - numeración de socios **y de cuentas**: correlativo **por cooperativa desde 1**, con una tabla de
+     contadores por tenant (`secuencias_tenant`) y una función atómica sin huecos
+     (`tecnifin.siguiente_numero`). Nunca una secuencia compartida. **Decidido por Jorge el 2026-09-20**
+     (cierra la Pregunta abierta 3). El número del sistema anterior, si existe, se guarda aparte
+     (`numero_socio_anterior`, `numero_cuenta_anterior`) y solo lo usa MIG-01.
    - `control_caja`: `UNIQUE (cooperativa_id, usuario_id, fecha)`.
    - `solicitudes_credito`, `creditos`, `depositos_plazo`: el código de negocio pasa a
      `UNIQUE (cooperativa_id, codigo)`; la PK se decide en ADR-0003.
@@ -134,10 +138,14 @@ de datos. La prueba 1 es la portación de `11_prueba_aislamiento_multicooperativ
 - **PREGUNTA ABIERTA 2 (Christian) — vida del token y cierre de sesión.** Duración del JWT, si hay refresh
   y si un cambio de rol o la baja de una cooperativa deben invalidar tokens ya emitidos. Afecta la
   mitigación del riesgo medio de arriba.
-- **PREGUNTA ABIERTA 3 (Jorge / negocio) — numeración de socios y de cuentas.** ¿El número de socio y el
-  número de cuenta son correlativos **por cooperativa** empezando en 1, o conservan la numeración que cada
-  cooperativa ya tiene en su sistema actual? Lo segundo obliga a que la migración fije el punto de partida
-  de cada secuencia por cooperativa. Afecta DAT-01 y MIG-01.
+- ~~**PREGUNTA ABIERTA 3 (Jorge / negocio) — numeración de socios y de cuentas.**~~ **RESUELTA por Jorge el
+  2026-09-20:** correlativo **por cooperativa desde 1**. No se conserva la numeración del sistema anterior;
+  el número anterior, cuando exista, se guarda en una columna aparte para la migración. Implementado en
+  `db/migrations/0001_plataforma.sql` (`secuencias_tenant` + `tecnifin.siguiente_numero`), con prueba de
+  concurrencia en `tests/aislamiento.integration.test.mjs`. Consecuencia para MIG-01: el número de socio
+  **cambia** al migrar, así que las libretas, los certificados y cualquier documento impreso con el número
+  viejo dejan de coincidir; hay que decidir con la cooperativa cómo se comunica ese cambio (no es trabajo
+  de H1, pero tampoco puede aparecer de sorpresa en la fase 3).
 - **PREGUNTA ABIERTA 4 (Jorge / negocio) — sucursales.** ¿Alguna cooperativa objetivo tiene más de una
   oficina con caja propia? Si la respuesta es sí, `oficina` es una dimensión que conviene meter en el
   modelo ahora y no después; hoy el esquema viejo no la tiene. No cambia el tenant, pero sí las claves

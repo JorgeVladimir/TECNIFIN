@@ -20,3 +20,16 @@ export function loadDotEnv(filePath) {
 }
 
 loadDotEnv(join(REPO_ROOT, '.env'));
+
+// Entorno del MIGRADOR: tecnifin_admin es dueno del esquema y el unico que hace DDL.
+// La aplicacion nunca se conecta con el (ADR-0002, punto 1). Distinto de
+// TECNIFIN_PG_ADMIN_PASSWORD, que es la clave del superusuario postgres y solo la usa
+// tools/init-db.mjs para crear roles y bases locales.
+export function entornoAdmin(env = process.env) {
+  const usuario = env.TECNIFIN_PG_ADMIN_USER;
+  const clave = env.TECNIFIN_PG_ADMIN_DB_PASSWORD;
+  if (!usuario || !clave) {
+    throw new Error('Configurar TECNIFIN_PG_ADMIN_USER y TECNIFIN_PG_ADMIN_DB_PASSWORD en .env');
+  }
+  return { ...env, TECNIFIN_PG_USER: usuario, TECNIFIN_PG_PASSWORD: clave };
+}

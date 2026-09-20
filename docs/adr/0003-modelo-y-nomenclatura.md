@@ -189,8 +189,101 @@ reciben (ADR-0002 §4), y es el trabajo de traducción con más riesgo de omisi�
 
 **Fuera del alcance de DAT-01** (se conocen, se hacen después): las tablas paramétricas de solvencia
 (`PonderacionesRiesgo`, `ParametrosPatrimonioTecnico`, `ParametrosRegulatorios`, en `db/sqlserver/31_*.sql`
-del sistema viejo) entran con M6/M7; `parametros_plataforma` y `parametros_cooperativa` entran con APP-01;
-las migraciones de datos reales son MIG-01 (fase 3).
+del sistema viejo) entran con M6/M7; `parametros_cooperativa` entra con APP-01; la carga del Catálogo Único
+de cuentas y de las ponderaciones son los seeds de la semana 3; las migraciones de datos reales son MIG-01.
+
+## Resultado de DAT-01: lo que quedó construido y lo que cambió al construirlo
+
+Aplicado en `tecnifin_dev` con `npm run migrate:apply`, sin pendientes ni alteradas. **31 tablas, 33
+políticas RLS, 60 claves foráneas, 107 índices**, en 10 migraciones agrupadas por dominio. Las 31 tablas
+llevan `ENABLE` **y** `FORCE ROW LEVEL SECURITY`: no hay excepciones.
+
+| Migración | Tablas |
+|---|---|
+| `0001_plataforma.sql` | `cooperativas`, `parametros_plataforma`, `usuarios`, `secuencias_tenant` |
+| `0002_socios.sql` | `socios`, `socio_direccion`, `socio_conyuge`, `socio_referencia`, `socio_carga`, `socio_ubicacion_mapa`, `socio_croquis_trabajo` |
+| `0003_cuentas_productos.sql` | `productos_financieros`, `cuentas`, `movimientos_cuenta` |
+| `0004_creditos.sql` | `solicitudes_credito`, `creditos`, `tabla_amortizacion`, `rubros_creditos`, `calificacion_cartera` |
+| `0005_plazo_fijo.sql` | `tasas_plazo_fijo`, `depositos_plazo` |
+| `0006_caja.sql` | `control_caja`, `transacciones_caja`, `denominaciones`, `detalle_efectivo_transaccion` |
+| `0007_contabilidad.sql` | `plan_cuentas`, `periodos_contables`, `asientos_contables`, `detalle_asiento` |
+| `0008_auditoria.sql` | `auditoria_procesos`, `auditoria_usuarios` |
+| `0009_relaciones_cruzadas.sql` | (11 FK entre dominios, ninguna tabla) |
+| `0010_rls_y_permisos.sql` | (verificación de catálogo y permisos, ninguna tabla) |
+
+Las 30 del inventario menos `SecuenciaDPF`, más `parametros_plataforma` y `secuencias_tenant`.
+
+### Once decisiones tomadas al construir que este ADR no tenía
+
+1. **`SecuenciaDPF` no se porta como tabla.** Habría sido una segunda implementación del mismo mecanismo de
+   numeración (regla 13). El correlativo `DPF-AAAAMM-NNNN` sale de
+   `tecnifin.siguiente_numero('dpf_AAAAMM')`, igual que el número de socio y el de cuenta. La tabla del
+   viejo además no tenía `CooperativaId`: el correlativo era compartido entre cooperativas.
+2. **`denominaciones` lleva tenant.** La § Reglas 3 la daba como catálogo global. Se decidió lo contrario:
+   permite que una cooperativa deshabilite una denominación sin afectar a las otras, y deja la prueba de
+   catálogo con **una sola** excepción operativa en vez de dos. Costo: 12 filas por cooperativa, sembradas
+   al dar de alta la cooperativa. `parametros_plataforma` sigue siendo el único catálogo global.
+3. **Ninguna tabla se salta `FORCE`, ni siquiera las de plataforma.** El primer intento dejó `cooperativas`
+   con RLS sin `FORCE`, porque con `FORCE` el `WITH CHECK` de una fila cuyo tenant es su propia PK todavía
+   inexistente no se puede satisfacer y el alta de la cooperativa 11 sería imposible. La forma correcta no
+   es la excepción: es una **segunda política** `TO tecnifin_admin USING (true) WITH CHECK (true)`. Las
+   políticas se suman con OR por rol, así que el dueño administra la tabla **pasando por el motor** en vez
+   de saltárselo, y la aplicación sigue viendo solo su fila. `tecnifin.aplicar_rls_plataforma()` hace eso
+   para `cooperativas` y `parametros_plataforma`, y es lo único que exime a una tabla de llevar
+   `cooperativa_id` (deja un `COMMENT ON TABLE ... 'plataforma: …'` que la verificación lee). Resultado:
+   31 de 31 tablas con `FORCE`, y cero listas de excepciones repartidas entre el SQL y las pruebas.
+4. **La inmutabilidad del tenant en la fila (ADR-0001 §5) no necesita trigger.** La política RLS ya la
+   garantiza: desde el tenant A, un `UPDATE` que ponga `cooperativa_id = B` falla el `WITH CHECK`; y desde
+   el tenant B la fila ni siquiera es visible para actualizarla. Treinta triggers habrían sido peso muerto.
+5. **La partida doble la hace cumplir el motor**, con un `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY
+   DEFERRED` sobre `detalle_asiento` que verifica `sum(D) = sum(H)` al COMMIT. Diferido porque el asiento se
+   arma línea por línea. **Límite conocido:** un asiento **sin ninguna línea** no dispara el trigger y por lo
+   tanto no se detecta aquí; se cubre en la capa de aplicación (M5) o con una verificación de cierre de
+   período. Queda escrito para que nadie lo descubra como sorpresa.
+6. **Las FK de código contable (`18_fix`) se declaran en `0009`.** `productos_financieros.cuenta_*`,
+   `tasas_plazo_fijo.cuenta_contable_dpf` y `depositos_plazo.cuenta_contable_dpf` referencian
+   `plan_cuentas (cooperativa_id, codigo)`. Consecuencia operativa: **no se puede crear un producto ni una
+   tasa antes de sembrar el plan de cuentas de esa cooperativa.** Es el orden correcto, pero condiciona la
+   secuencia del alta de una cooperativa nueva y la de los seeds de la semana 3.
+7. **`unaccent` y `pg_trgm` viven en `public`.** La § Decisión 1 pedía `public` sin objetos; se cumple para
+   tablas de negocio, pero las extensiones van ahí por convención (y `public.tecnifin_schema_migrations`
+   del migrador ya estaba). `public` no tiene `CREATE` para `tecnifin_app`. El envoltorio inmutable
+   `tecnifin.sin_acentos()` es lo que permite indexar la búsqueda de personas.
+
+8. **La PK de toda tabla de negocio es `(cooperativa_id, <id>)`**, no el id subrogado solo. El primer intento
+   usaba PK simple más un `UNIQUE (cooperativa_id, id)` aparte —el destino de las FK compuestas—, es decir
+   dos índices por tabla para la misma información. Con la PK compuesta hay uno, y además queda agrupado por
+   cooperativa, que es como lo recorre RLS. Junto con cuatro índices que ya cubría un `UNIQUE` más largo y
+   uno de baja selectividad, el esquema pasó de 128 a **107 índices**: 21 menos que escribir en cada
+   `INSERT` y que guardar en cada respaldo. La decisión de ADR-0003 § Identificadores no cambia —el id
+   sigue siendo subrogado `bigint IDENTITY`—, cambia dónde vive la unicidad.
+9. **El tenant y el correlativo son `DEFAULT` de la columna, no argumentos del código.**
+   `aplicar_rls` pone `cooperativa_id DEFAULT tecnifin.cooperativa_actual()`, y `socios.numero_socio` y
+   `cuentas.numero_cuenta` tienen `DEFAULT tecnifin.siguiente_numero(...)`. Ningún `INSERT` de negocio
+   vuelve a nombrar el tenant, con lo que desaparece la clase de error "me olvidé de `cooperativa_id`", y
+   nadie puede inventarse un número de socio por descuido. Fuera de `withTenant` el `DEFAULT` es NULL y la
+   fila se rechaza: sigue fallando cerrada.
+10. **El formato del código contable vive en un dominio**, `tecnifin.codigo_contable` (`varchar(15)` de solo
+    dígitos). Antes era el mismo `CHECK (~ '^[0-9]+$')` copiado en ocho columnas de cuatro tablas. Ahora la
+    regla se cambia en un solo sitio y ninguna columna de código contable puede nacer sin ella.
+11. **Append-only y contador monótono los exige el motor, no el `REVOKE`.** `aplicar_rls(tabla, true)`
+    instala un trigger que rechaza `UPDATE` y `DELETE` en las tablas de auditoría —también al dueño—, y
+    `secuencias_tenant` tiene un trigger que solo admite `valor = valor + 1`. Un `REVOKE` protege de un rol;
+    un trigger protege de todos, incluida una tarea de mantenimiento conectada como `tecnifin_admin`.
+
+### Reglas de esquema que quedaron comprobadas por el propio motor
+
+La regla vive en **`tecnifin.verificar_invariantes()`** (migración 0001) y la exige **`tools/migrate.mjs`
+después de cada migración, dentro de su transacción**. Una tabla que quede sin `cooperativa_id NOT NULL`
+(y sin la marca de plataforma), sin RLS, sin `FORCE`, sin política, o una FK sin índice de soporte, o una
+función `SECURITY DEFINER`, **no llega a existir**: la migración se revierte con el detalle del problema.
+
+Que la comprobación esté en el migrador y no en `0010` es deliberado: comprobarla solo dentro de `0010`
+habría dejado fuera a la migración 0011 en adelante, que es exactamente cuando el olvido ocurre. La prueba
+de aislamiento llama a la misma función, de modo que la regla está escrita una sola vez.
+
+Toda migración futura que agregue una tabla llama a `SELECT tecnifin.aplicar_rls('tecnifin.<tabla>')` —o a
+`aplicar_rls_plataforma` si de verdad no pertenece a ninguna cooperativa.
 
 ## Consecuencias y riesgos
 
@@ -232,15 +325,26 @@ Criterio de aceptación: las 11 en verde en CI sobre `tecnifin_dev`, más las pr
 
 ## Preguntas abiertas
 
-- **PREGUNTA ABIERTA 1 (Jorge / negocio) — precisión de las tasas.** ¿Con cuántos decimales se pacta y se
-  calcula una tasa? El sistema viejo usa `DECIMAL(5,2)` (dos decimales). Si la SEPS o el contrato de crédito
-  exigen cuatro, el cambio a `numeric(9,4)` es correcto pero **produce diferencias de centavos contra el
-  sistema actual en las tablas de amortización**, y hay que decidir si las amortizaciones ya emitidas se
-  recalculan o se congelan tal como están. Bloquea el criterio de paridad de M3.
-- **PREGUNTA ABIERTA 2 (Jorge / negocio) — códigos de negocio visibles.** ¿El formato de `CreditoID`,
-  `SolicitudID` y `DepositoID` es exigido por algún documento impreso, contrato o reporte a la SEPS? Si lo es,
-  el código se conserva literal como columna única por cooperativa; si no, se puede simplificar. No cambia el
-  modelo, sí cambia la migración.
+### Supuestos pendientes con los que DAT-01 ya construyó
+
+Tres preguntas de Jorge siguen sin respuesta. DAT-01 no podía esperarlas, así que tomó el valor por defecto
+más barato de revertir. **Ninguno está decidido; todos son supuestos.**
+
+| # | Supuesto adoptado | Qué cuesta cambiarlo después |
+|---|---|---|
+| (a) **Sucursales** | El esquema **no tiene dimensión oficina**. `control_caja` sigue siendo único por `(cooperativa_id, usuario_id, fecha)` | **Barato.** Agregar `oficinas` y una `oficina_id` a `control_caja`, `transacciones_caja` y `cuentas` es una migración **aditiva**; lo único que se rehace es el único de `control_caja`. Se decide antes de M4 (caja) para no rehacer sus consultas |
+| (b) **Precisión de tasas** | `numeric(9,4)` en toda tasa y porcentaje (era `DECIMAL(5,2)`) | **Nulo en el esquema, no nulo en los números.** `(9,4)` es superset de `(5,2)`: ningún valor existente cambia. Pero si el negocio decide calcular **con** cuatro decimales, las amortizaciones difieren en centavos contra SQL Server. Se mide con `tools/paridad.mjs` antes de aceptar M3; es ahí donde bloquea, no aquí |
+| (c) **Formato de los códigos visibles** | `CRED-`/`SOL-`/`DPF-` se conservan literales como `codigo varchar`, `UNIQUE (cooperativa_id, codigo)`; la PK es subrogada | **Barato.** Cambiar el formato es cambiar el generador de la aplicación, no el esquema: ninguna FK cuelga del texto |
+
+- ~~**PREGUNTA ABIERTA 1 (Jorge / negocio) — precisión de las tasas.**~~ Sigue abierta; ver supuesto (b).
+  ¿Con cuántos decimales se **pacta** y se **calcula** una tasa? Si son cuatro, hay que decidir si las
+  amortizaciones ya emitidas se recalculan o se congelan. Bloquea el criterio de paridad de M3, no a H1.
+- **PREGUNTA ABIERTA 2 (Jorge / negocio) — códigos de negocio visibles.** Sigue abierta; ver supuesto (c).
+  ¿El formato de `CreditoID`, `SolicitudID` y `DepositoID` es exigido por algún documento impreso, contrato o
+  reporte a la SEPS? No cambia el modelo, sí cambia el generador y la migración.
+- **PREGUNTA ABIERTA 5 (Jorge / negocio) — sucursales.** Heredada de ADR-0001 §PA4; ver supuesto (a). Se
+  necesita **antes de M4 (caja)**: después de que las consultas de caja estén escritas, agregarla cuesta
+  reescribirlas, aunque la migración siga siendo aditiva.
 - **PREGUNTA ABIERTA 3 (Christian) — binarios en la base.** `socio_ubicacion_mapa` y `socio_croquis_trabajo`
   guardan imágenes en `VARBINARY(MAX)` → `bytea`. Con 10 cooperativas eso infla el respaldo completo, alarga
   la ventana de restauración y empeora justamente el punto débil de ADR-0002 (R4). ¿Se quedan en la base

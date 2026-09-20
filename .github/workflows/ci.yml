@@ -21,6 +21,8 @@ jobs:
       TECNIFIN_PG_DATABASE: tecnifin_ci
       TECNIFIN_PG_USER: tecnifin_app
       TECNIFIN_PG_PASSWORD: ci_app
+      TECNIFIN_PG_ADMIN_USER: tecnifin_admin
+      TECNIFIN_PG_ADMIN_DB_PASSWORD: ci_admin_db
       TECNIFIN_PG_ADMIN_PASSWORD: ci_admin
     steps:
       - uses: actions/checkout@v4
