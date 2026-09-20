@@ -41,16 +41,15 @@ con aislamiento de datos garantizado por el motor y no por la disciplina de quie
 
 - El núcleo de aplicación APP-01 (tenant, IAM, auditoría, configuración por tenant) — hasta el 30-nov.
 - Los módulos M1-M7 — dic-2026 a feb-2027.
-- La migración de datos reales desde `SQLGUTPATATE` (MIG-01) — marzo-2027, sobre restauración del respaldo.
+- La base de demostración (`tecnifin_demo`) y su generador de datos sintéticos. La base de producción **nace en blanco**; no hay migración de datos reales por defecto (MIG-01 solo aplica si una cooperativa nueva trae datos de su sistema).
 - El dimensionamiento del servidor de producción y el runbook de restauración por cooperativa — Fases 4 y 5.
 
-**Explícitamente fuera:** GUTT_SYSTEM (`server.js`, `SQLGUTPATATE`, servicio `GuttSystemBackend`) no se toca.
-Sigue sirviendo la demo y a la COAC 20 de Febrero durante todo el proyecto.
+**Explícitamente fuera:** el sistema anterior (GUTT_SYSTEM) no se toca desde este proyecto y sigue funcionando por su lado.
 
 ## 2. Estado actual
 
 **El sistema vigente (GUTT_SYSTEM).** Node/Express + SQL Server, `server.js` de ~6.400 líneas, base
-`SQLGUTPATATE` **mono-cooperativa: sin `CooperativaId`**. Funciona en producción y es la referencia funcional y
+su base SQL Server **mono-cooperativa: sin `CooperativaId`**. Funciona en producción y es la referencia funcional y
 numérica de todo lo que TECNIFIN debe reproducir: reportería SEPS, proceso mensual de cartera, solvencia
 regulatoria paramétrica.
 

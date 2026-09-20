@@ -141,7 +141,7 @@ CREATE TABLE tecnifin.rubros_creditos (
 CREATE INDEX ix_rubros_creditos_amortizacion ON tecnifin.rubros_creditos (cooperativa_id, amortizacion_id);
 SELECT tecnifin.aplicar_rls('tecnifin.rubros_creditos');
 
--- Calificacion de cartera y provisiones (hueco SEPS real, ausente en SQLGUTPATATE).
+-- Calificacion de cartera y provisiones (requisito de la SEPS).
 -- El porcentaje de provision es un dato parametrico, nunca una constante en codigo.
 CREATE TABLE tecnifin.calificacion_cartera (
   calificacion_id      bigint        GENERATED ALWAYS AS IDENTITY,

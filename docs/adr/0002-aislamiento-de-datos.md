@@ -144,7 +144,7 @@ contrato — hoy ninguno lo exige (Pregunta abierta 3).
 | Una tabla nueva sin RLS es una fuga silenciosa | Prueba automática que recorre `pg_class`/`pg_policy` y falla si alguna tabla del esquema `tecnifin` no tiene `relrowsecurity` **y** `relforcerowsecurity` **y** al menos una política |
 | Un `SECURITY DEFINER` mal puesto rompe todo el modelo | Prueba de higiene: el esquema no debe tener funciones `SECURITY DEFINER` sin justificación escrita |
 | El rendimiento de una cooperativa afecta a las otras (vecino ruidoso): cierres de mes, reportes SEPS | `cooperativa_id` como **primera columna** de los índices de las tablas grandes (`movimientos_cuenta`, `transacciones_caja`, `detalle_asiento`, `tabla_amortizacion`). Medir en H1 con la fábrica de datos, no suponer |
-| `pg_dump` completo crece con el total de cooperativas; la ventana de respaldo también | Dimensionar con datos reales de la 20 de Febrero antes de la Fase 4. Ver Pregunta abierta 2 |
+| `pg_dump` completo crece con el total de cooperativas; la ventana de respaldo también | Dimensionar con el volumen de la base de demostración y con las cifras de Christian (Pregunta abierta 2) antes de la Fase 4. Ver Pregunta abierta 2 |
 | RLS añade un predicado a cada consulta; con índices mal ordenados puede cambiar planes | Medido en H1 sobre la fábrica de datos, antes de aceptar el acta |
 | Un `TRUNCATE`, `ALTER` o `DROP` erróneo afecta a las 10 cooperativas a la vez | Solo `tecnifin_admin` hace DDL, solo por `migrate.mjs`, solo con respaldo verificado previo |
 

@@ -122,7 +122,7 @@ Regla general: se traduce el **significado**, no la grafía. Los usos listados s
 | `NVARCHAR(n)` (n ≤ 500) | `varchar(n)` | Se conserva `n` cuando corresponde a un ancho real (identificación 20, RUC 13, código contable 15, moneda 3). Donde `n` era arbitrario, se conserva igual: es una red contra datos basura y no cuesta nada |
 | `NVARCHAR(MAX)` (9) | `text` | `Socios.PatrimonioIngresos` y demás JSON heredados quedan `text` en DAT-01. Normalizarlos es trabajo de M1, no de H1 |
 | `CHAR(1)` / `CHAR(2)` | `char(1)` / `char(2)` | Solo si son realmente de ancho fijo; si no, `varchar` |
-| `VARBINARY(MAX)` (2) | `bytea` | `socio_ubicacion_mapa` y `socio_croquis_trabajo`. **Ver Pregunta abierta 3** |
+| `VARBINARY(MAX)` (2) | `bytea` | `socio_ubicacion_mapa` y `socio_croquis_trabajo`. **Decidido por Jorge (2026-09-20): las imágenes van dentro de la base** |
 | `CHECK (X IN (...))` | `CHECK (x IN (...))` | Se conservan como `CHECK`, **no** como `enum` de PostgreSQL: agregar un valor a un `CHECK` es un `ALTER` transaccional y reversible; a un `enum` no lo es |
 | `SEQUENCE Seq_NumeroSocio` | por cooperativa | Una secuencia global filtra el conteo entre tenants (ADR-0001, hallazgo 3). **Ver Pregunta abierta 2 de ADR-0001** |
 | Función escalar en `CHECK` (`fn_CooperativaDe*`, `12_fix`) | **FK compuesta** `(cooperativa_id, padre_id)` | No se porta. PostgreSQL exige que un `CHECK` sea inmutable y no consulte otras tablas. El equivalente nativo y más fuerte es la FK compuesta de ADR-0002 §4 |
@@ -139,9 +139,9 @@ Regla general: se traduce el **significado**, no la grafía. Los usos listados s
 3. **Catálogos globales (sin tenant):** solo dos candidatos, y ambos se declaran de forma explícita en el DDL y
    en la lista de excepciones de la prueba de catálogo de ADR-0002:
    `denominaciones` (billetes y monedas del USD: es el circulante del país, no de una cooperativa) y
-   `parametros_plataforma`. **Todo lo demás lleva tenant**, incluido `plan_cuentas`: el Catálogo Único es común,
-   pero cada cooperativa activa su propio subconjunto y sus propias bandas, y así está ya en el esquema viejo
-   (`UQ_PlanCuentas_Cooperativa_Codigo`).
+   `parametros_plataforma`. **Todo lo demás lleva tenant**, incluido `plan_cuentas`: **el plan de cuentas es uno por cooperativa**
+   (decisión de Jorge, 2026-09-20). Cada cooperativa tiene su propia copia; ninguna se relaciona con la de otra y
+   no existe un catálogo compartido. Dar de alta una cooperativa siembra su plan y sus parámetros.
 4. **Datos regulatorios en tablas, nunca en código** (regla 5): bandas de antigüedad por familia leídas del plan
    de cuentas, ponderaciones de riesgo y parámetros de patrimonio técnico en sus propias tablas, sembradas
    desde `db/seeds/`. Ninguna constante de banda ni de prefijo contable en JavaScript.
@@ -325,6 +325,19 @@ Criterio de aceptación: las 11 en verde en CI sobre `tecnifin_dev`, más las pr
 
 ## Preguntas abiertas
 
+### Decisiones de Jorge del 2026-09-20
+
+1. **Numeración por cooperativa desde 1** (socios y cuentas). Ya implementada.
+2. **La base nace en blanco.** TECNIFIN es un sistema nuevo con el mismo funcionamiento que GUTT_SYSTEM, pero sin datos
+   ni referencias a ninguna cooperativa. Lo único que existe además es la **base de demostración** (`tecnifin_demo`),
+   separada, para demostraciones y pruebas de funcionamiento. Los datos sintéticos del sistema anterior pasan a ella.
+3. **Plan de cuentas uno por cooperativa**, sin relación entre cooperativas (§ Reglas 3).
+4. **Imágenes dentro de la base** (`bytea`). Consecuencia: los respaldos crecen; el volumen sigue siendo la Pregunta
+   abierta 3 para Christian, pero ya no como alternativa de diseño sino como dato de capacidad.
+5. **DAT-02 abierto**: cartera SEPS (reclasificación y provisiones), solvencia regulatoria (ponderaciones, patrimonio
+   técnico, parámetros), tasas de crédito, activación de la banca en línea y excepciones de documentos del socio.
+   Todas por cooperativa y con RLS `FORCE`.
+
 ### Supuestos pendientes con los que DAT-01 ya construyó
 
 Tres preguntas de Jorge siguen sin respuesta. DAT-01 no podía esperarlas, así que tomó el valor por defecto
@@ -345,7 +358,7 @@ más barato de revertir. **Ninguno está decidido; todos son supuestos.**
 - **PREGUNTA ABIERTA 5 (Jorge / negocio) — sucursales.** Heredada de ADR-0001 §PA4; ver supuesto (a). Se
   necesita **antes de M4 (caja)**: después de que las consultas de caja estén escritas, agregarla cuesta
   reescribirlas, aunque la migración siga siendo aditiva.
-- **PREGUNTA ABIERTA 3 (Christian) — binarios en la base.** `socio_ubicacion_mapa` y `socio_croquis_trabajo`
+- **PREGUNTA ABIERTA 3 (Christian) — binarios en la base. Decisión de diseño tomada por Jorge (dentro de la base); queda como dato de capacidad.** `socio_ubicacion_mapa` y `socio_croquis_trabajo`
   guardan imágenes en `VARBINARY(MAX)` → `bytea`. Con 10 cooperativas eso infla el respaldo completo, alarga
   la ventana de restauración y empeora justamente el punto débil de ADR-0002 (R4). ¿Se quedan en la base
   (simple, transaccional, todo en un respaldo) o salen a almacenamiento de archivos con la base guardando solo

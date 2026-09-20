@@ -100,9 +100,9 @@ aislamiento (basta emitir dos tokens y correr el mismo endpoint).
 
 - Un endpoint que legítimamente cruza cooperativas (consolidado de TECNIFIN, tablero interno) **no puede**
   usar la ruta normal: necesita un camino aparte, explícito y auditado. No existe en H1.
-- La migración de datos reales (MIG-01, fase 3) tiene que asignar `cooperativa_id` a cada fila de
-  `SQLGUTPATATE`, que es mono-cooperativa: todo va a la COAC 20 de Febrero. Es mecánico, pero hay que
-  verificar que ninguna fila quede sin tenant.
+- La base de TECNIFIN **nace en blanco** (decisión de Jorge, 2026-09-20): no hereda datos de ninguna cooperativa
+  del sistema anterior. Si más adelante una cooperativa nueva trae datos de su sistema, esa carga (MIG-01) es un
+  proyecto aparte: asigna `cooperativa_id` a cada fila y verifica que ninguna quede sin tenant.
 - Cambiar `usuarios` a PK subrogada rompe todas las FK que hoy apuntan a `UsuarioId NVARCHAR(20)`
   (`socios.UsuarioRegistroId`, `transacciones_caja`, `movimientos_cuenta`, `asientos_contables`,
   `control_caja`, `depositos_plazo` x2, `tasas_plazo_fijo`). Es trabajo de DAT-01, no una sorpresa.

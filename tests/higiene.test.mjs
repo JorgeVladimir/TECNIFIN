@@ -58,6 +58,16 @@ test('regla 8: raiz limpia, sin logs ni scripts de prueba sueltos', () => {
   assert.deepEqual(sueltos, []);
 });
 
+test('regla 11: sin datos ni referencias a cooperativas concretas o a la base del sistema anterior', () => {
+  // El patron se arma con fragmentos para que esta misma prueba no lo contenga.
+  const prohibido = new RegExp(['pa' + 'tate', 'credia' + 'poyo', 'sql' + 'gutpa', '20 de ' + 'febrero'].join('|'), 'i');
+  const culpables = archivos
+    .filter(f => TEXTO.has(extname(f)) && rel(f) !== '.env')
+    .filter(f => prohibido.test(readFileSync(f, 'utf8')))
+    .map(rel);
+  assert.deepEqual(culpables, []);
+});
+
 test('regla 9: identificadores TECNIFIN, sin prefijo GUTT_ en codigo nuevo', () => {
   const culpables = archivos
     .filter(f => /^(src|tools)\//.test(rel(f)) && ['.js', '.mjs'].includes(extname(f)))

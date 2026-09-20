@@ -8,7 +8,7 @@ PostgreSQL · Node.js. Denominación principal **TECNIFIN S.A.S.**, alterna **GU
 El plan, el calendario, los agentes, las skills y el tablero viven en **`C:\GUTT_SYSTEM`** (orquestador y
 fuente del conocimiento del sistema viejo). Este repo solo contiene el producto. No re-derivar decisiones:
 leer el plan (`C:\GUTT_SYSTEM\DOCS_SISTEMA_FINANCIERO\plan_proyecto_tecnifin.md`) y `docs/adr/`.
-El sistema vigente (GUTT_SYSTEM, SQL Server `SQLGUTPATATE`, `server.js`) **no se toca desde aquí**.
+El sistema anterior (GUTT_SYSTEM: SQL Server y `server.js`) **no se toca desde aquí**. TECNIFIN es un sistema nuevo: **nace en blanco**, sin datos de ninguna cooperativa; solo existe la base de demostración.
 
 ## Comandos
 
@@ -50,8 +50,10 @@ Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero creden
    visible es un **dato** (parámetros de la plataforma), no una constante regada por el código.
 10. **Operación desde la Fase 0**: `deploy/` (servicio, respaldo, preflight, runbook) se mantiene y se prueba en
     cada fase, no al final.
-11. **Datos de demo aparte de los reales.** Datos reales solo por migración controlada (MIG-01), ensayada
-    primero sobre una restauración del respaldo.
+11. ✔ **La base nace en blanco y la demo va aparte.** Ningún dato ni referencia a una cooperativa concreta en el repo
+    (semillas, fixtures, docs). Existe `tecnifin_demo`, una base separada con datos sintéticos, solo para
+    demostraciones y pruebas de funcionamiento. Si algún día una cooperativa trae datos de su sistema anterior, esa
+    carga (MIG-01) es un proyecto aparte, ensayado sobre una restauración del respaldo.
 12. **El CI solo prueba.** El despliegue es manual, con `preflight`. Un push a `main` no publica nada.
 13. **Una sola implementación**: si un paso se repite en más de un módulo, va a `src/platform/` o a una skill
     del orquestador. Al cerrar cada módulo se busca duplicación.
