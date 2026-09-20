@@ -1,0 +1,38 @@
+# Regla 12: el CI solo prueba. No despliega nada, ni siquiera desde main.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci_admin
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TECNIFIN_PG_HOST: 127.0.0.1
+      TECNIFIN_PG_PORT: '5432'
+      TECNIFIN_PG_DATABASE: tecnifin_ci
+      TECNIFIN_PG_USER: tecnifin_app
+      TECNIFIN_PG_PASSWORD: ci_app
+      TECNIFIN_PG_ADMIN_PASSWORD: ci_admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Crear rol y base de la corrida
+        run: npm run db:init
+      - name: Aplicar migraciones (todas deben aplicar limpio)
+        run: npm run migrate:apply
+      - name: Sin migraciones pendientes ni alteradas
+        run: npm run migrate
+      - name: Pruebas (unitarias, higiene, aislamiento)
+        run: npm test

@@ -1,0 +1,22 @@
+# Secretos: solo .env.example va a Git
+.env
+.env.*
+!.env.example
+
+# Dependencias y compilados
+node_modules/
+dist/
+
+# Regla 8: logs, respaldos, cargas y borradores viven FUERA del repo o en var/
+var/
+*.log
+backups/
+uploads/
+scratch/
+tmp/
+
+# Sistema
+.DS_Store
+Thumbs.db
+.claude/worktrees/
+.claude/settings.local.json

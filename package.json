@@ -1,0 +1,17 @@
+{
+  "name": "tecnifin",
+  "version": "0.1.0",
+  "description": "TECNIFIN S.A.S. - plataforma core bancario multi-tenant para cooperativas (SEPS, Ecuador) sobre PostgreSQL",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "migrate": "node tools/migrate.mjs",
+    "migrate:apply": "node tools/migrate.mjs --aplicar",
+    "db:init": "node tools/init-db.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}
