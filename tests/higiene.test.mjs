@@ -53,7 +53,7 @@ test('regla 7: ningun archivo versionado trae una credencial con valor', () => {
 
 test('regla 8: raiz limpia, sin logs ni scripts de prueba sueltos', () => {
   const permitido = new Set(['CLAUDE.md', 'AGENTS.md', 'README.md', 'package.json', 'package-lock.json', '.gitignore', '.env.example', '.env']);
-  const carpetas = new Set(['db', 'src', 'tests', 'tools', 'deploy', 'docs', '.github', '.claude', '.git', 'node_modules', 'var', 'dist']);
+  const carpetas = new Set(['db', 'src', 'tests', 'tools', 'deploy', 'docs', '.github', '.claude', '.codex', '.git', 'node_modules', 'var', 'dist']);
   const sueltos = readdirSync(ROOT).filter(n => !permitido.has(n) && !carpetas.has(n));
   assert.deepEqual(sueltos, []);
 });
