@@ -1,0 +1,23 @@
+Revisión cruzada DAT-01/02 — REQUIERE CAMBIOS (3 ALTO, 4 MEDIO).
+Referencia: 97adaef; HEAD revisado: 5c38905. Alcance: migraciones 0001–0013, plataforma, semillas y pruebas.
+
+- ALTO — db/migrations/0001_plataforma.sql:61: el tenant depende de un parámetro de sesión modificable por tecnifin_app. Reproducción: fijar A, cambiar app.cooperativa_id a B y consultar/actualizar usuarios; se leen y modifican filas de B. Requiere poder ejecutar SQL; no se probó explotación HTTP. Incumple ADR-0002, prueba 6.
+- ALTO — db/migrations/0007_contabilidad.sql:135: la marca de cuadre evita validaciones posteriores de la misma transacción. Reproducción: insertar D=100/H=100, pasar restricciones a IMMEDIATE y cambiar H a 90; la segunda validación acepta 100/90. También se elude cambiando de tenant antes de ejecutar el trigger diferido.
+- ALTO — db/migrations/0007_contabilidad.sql:105: valor > 0 admite NaN; dos líneas D/H con NaN pasan el cuadre y contaminan sumas. Reproducción: insertar ambas y forzar las restricciones inmediatas; se acepta suma NaN. Véase la [semántica de numeric en PostgreSQL](https://www.postgresql.org/docs/18/datatype-numeric.html).
+- MEDIO — db/seeds/plan_cuentas_seps.json:472: las filas 472–474, códigos 260305/260310/260320, conservan nombres de bancos concretos y se copian a cada alta. Reproducción: inspeccionar esos códigos; tests/higiene.test.mjs:89 usa una lista de nombres que no los incluye. Incumple la limpieza de entidades exigida por el encargo.
+- MEDIO — db/migrations/0001_plataforma.sql:154: verificar_invariantes solo recorre relkind=r; omite raíces particionadas. Reproducción: raíz particionada sin RLS y partición hija con aplicar_rls; el verificador devuelve cero problemas y consultar la raíz desde A devuelve A y B. Riesgo para futuras migraciones; las 40 tablas actuales sí tienen FORCE.
+- MEDIO — db/migrations/0011_cartera_seps.sql:129: el CHECK solo restringe SIMULADO y permite provision_contabilizada=100, estado APLICADO y asiento_id nulo. Reproducción: insertar esa corrida con usuario válido; las restricciones la aceptan, sin trazabilidad contable.
+- MEDIO — src/platform/semillas.js:141: altaCooperativa inserta antes de sembrar, fuera de una transacción común, y no es idempotente. Reproducción propuesta por inspección: provocar fallo en sembrarCatalogos y reintentar el mismo código/RUC; queda el alta sin catálogos y el reintento falla por unicidad. No se ejecutó esta prueba para evitar un alta permanente.
+
+Riesgos ya documentados: PIN en claro (PA6), agrupadoras editables (PA9), bandas por nombre (PA10), crédito sin tarifario (PA11), rangos solapables (PA12), detalle aplicado editable (PA13) y asientos vacíos; no se presentan como descubrimientos nuevos.
+Controles confirmados: WITH CHECK rechaza cambio de tenant en la fila (42501), FK compuesta rechaza padre ajeno (23503) y descuadre normal falla (23514); la suite cubre DDL/SET ROLE, auditoría y concurrencia del pool.
+Catálogo actual: 40 tablas con RLS/FORCE, 42 políticas, 75 FK con tenant en ambos extremos y cero SECURITY DEFINER; la política general de admin queda en las dos tablas de plataforma.
+Migraciones: hashes sin alteraciones, 13 aplicadas, cero pendientes; una tabla ordinaria sin aplicar_rls sí es detectada. La repetición del migrador se comprobó por inspección de su registro/hashes y bloqueo, sin reaplicar cambios.
+Semillas: 994 códigos únicos, 987 relaciones de jerarquía; 36 parámetros con rangos continuos por segmento y cuentas de provisión presentes; verificadas las diferencias 1402/1422 y las seis bandas de 1423/1427. No se certifica vigencia normativa.
+Secretos: escaneo de 75 archivos versionados sin candidatos a credenciales; .env se cargó para conectar, sin volcar su contenido ni valores secretos.
+Pruebas adversarias en tecnifin_dev con datos sintéticos: preparación privilegiada, operaciones bajo SET LOCAL ROLE tecnifin_app y comprobación adicional del cambio de GUC con conexión real de aplicación.
+Todas las sondas terminaron con ROLLBACK e identidades explícitas; control final: 39 tablas no globales vacías y cero objetos de sonda. Se forzaron triggers con restricciones inmediatas, sin confirmar datos de prueba.
+npm run verificar: 44/44 pruebas en verde, 13 migraciones aplicadas, cero pendientes (verificación inicial; cierre final pendiente).
+Solo se escribió este informe en var/codex; sin correcciones, cambios versionados, commit, actualización de ESTADO ni push, por el encargo de solo lectura.
+Pendiente: corregir hallazgos y repetir revisión; detener la cola ante los ALTO. Las decisiones abiertas y los ADR siguen reservados a Jorge/Christian.
+Tiempo: aproximadamente 7 minutos; consumo percibido alto por lectura y pruebas adversarias, sin telemetría fiable de tokens.

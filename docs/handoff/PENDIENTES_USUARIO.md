@@ -9,6 +9,9 @@
 6. Contrato v3: cláusula 10.5 (pagos a Christian) y Fase 3 (ya no es «migración de datos reales»; requiere acta).
 7. Contratar dominio `tecnifin.com` y hosting (tope USD 150). Hacer `git push` de este repo y de GUTT_SYSTEM.
 
+## Hallazgo ALTO de la revisión cruzada que exige decisión de diseño (Jorge + Christian)
+- **El tenant se fija con un parámetro de sesión (`app.cooperativa_id`) que el propio rol `tecnifin_app` puede cambiar** con `SET`. Quien logre ejecutar SQL con esa conexión (p. ej. por una inyección) puede cambiar de cooperativa y leer o modificar filas de otra. Reproducido por Codex (informe, ALTO 1). Corregirlo cambia ADR-0002 (p. ej. fijar el tenant con una firma que el SQL inyectado no pueda falsificar). **No se corrige sin decisión.**
+
 ## Christian (revisión expresa, cláusula 6.3; enviar borrador el 2-oct)
 1. RPO/RTO y restauración de una cooperativa sin afectar a las otras. **Bloquea ADR-0002.**
 2. Volumen y retención por cooperativa (decide si hay particionado).
