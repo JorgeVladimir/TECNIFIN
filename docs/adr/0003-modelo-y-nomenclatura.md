@@ -192,6 +192,11 @@ reciben (ADR-0002 §4), y es el trabajo de traducción con más riesgo de omisi�
 del sistema viejo) entran con M6/M7; `parametros_cooperativa` entra con APP-01; la carga del Catálogo Único
 de cuentas y de las ponderaciones son los seeds de la semana 3; las migraciones de datos reales son MIG-01.
 
+**Adelantado a DAT-02**: las tres tablas de solvencia y los seeds del Catálogo Único, que quedaban para M6/M7
+y la semana 3, entraron en DAT-02 (ver más abajo). No por adelantar trabajo: `parametros_provision_cartera`
+tiene una FK contra `plan_cuentas`, así que sin el catálogo sembrado la tabla no se puede llenar, y sin ella
+el proceso de cartera no tiene parámetros. Quedan en su sitio `parametros_cooperativa` (APP-01) y MIG-01.
+
 ## Resultado de DAT-01: lo que quedó construido y lo que cambió al construirlo
 
 Aplicado en `tecnifin_dev` con `npm run migrate:apply`, sin pendientes ni alteradas. **31 tablas, 33
@@ -212,6 +217,79 @@ llevan `ENABLE` **y** `FORCE ROW LEVEL SECURITY`: no hay excepciones.
 | `0010_rls_y_permisos.sql` | (verificación de catálogo y permisos, ninguna tabla) |
 
 Las 30 del inventario menos `SecuenciaDPF`, más `parametros_plataforma` y `secuencias_tenant`.
+
+## Resultado de DAT-02: las tablas que DAT-01 no cubría, y las semillas
+
+Tres migraciones más, aplicadas con `npm run migrate:apply` sin pendientes ni alteradas. El esquema pasa a
+**40 tablas, 42 políticas RLS, 75 claves foráneas, 132 índices y 4 dominios**. Las 40 llevan `ENABLE` **y**
+`FORCE ROW LEVEL SECURITY`: sigue sin haber excepciones, y `verificar_invariantes()` pasó después de cada una.
+
+| Migración | Tablas |
+|---|---|
+| `0011_cartera_seps.sql` | `parametros_provision_cartera`, `reclasificacion_cartera`, `reclasificacion_cartera_detalle` |
+| `0012_solvencia_regulatoria.sql` | `ponderaciones_riesgo`, `parametros_patrimonio_tecnico`, `parametros_regulatorios` |
+| `0013_tasas_credito_canal_socio.sql` | `tasas_credito`, `activacion_banca_linea`, `socio_documento_excepcion` |
+
+**Inventario final: 40 tablas.** 38 de negocio (con `cooperativa_id`) y 2 de plataforma (`cooperativas` y
+`parametros_plataforma`). El detalle de traducción —mapeo de nombres, unidades, cómo se siembra una
+cooperativa, cómo se usa la demo— está en **`docs/patrones/02-catalogos-y-demo.md`**.
+
+### Nueve decisiones tomadas al construir DAT-02
+
+1. **`TasasCredito` no se funde en `productos_financieros`.** `productos_financieros` es el catálogo de
+   productos de **captación** (tipo de depósito, cuentas contables activa/inactiva, permisos de depósito y
+   retiro, meses de acreditación). `tasas_credito` es un tarifario de **colocación** (montos, plazos, tres
+   tasas). De las 20 columnas de una no aplicaría ninguna a la otra: fundirlas dejaría las dos mitades en NULL
+   y un `CHECK` condicional por tipo. Son dos catálogos.
+2. **El vocabulario de segmento y el de calificación viven en un dominio, no en cinco `CHECK` copiados.**
+   El origen decía `MICROCREDITO` en el tarifario y `MICROEMPRESA` en la provisión: con dos vocabularios, la
+   calificación no encuentra sus parámetros y la provisión sale en cero **sin que nada falle**.
+   `tecnifin.segmento_credito` y `tecnifin.calificacion_riesgo` hacen que eso sea imposible por construcción
+   en las seis columnas que los usan —incluida `calificacion_cartera.categoria`, de DAT-01, que pasa al
+   dominio y suelta su `CHECK` propio—. Ampliar la lista es un `ALTER DOMAIN`, no cuatro migraciones. Es el
+   mismo patrón que `tecnifin.codigo_contable`.
+3. **Las unidades no se unificaron, se hicieron incompatibles.** `porcentaje_provision`, `ponderacion` y
+   `factor` son fracciones (`CHECK <= 1`); las tasas son porcentajes (`CHECK <= 100`). Unificarlas habría
+   cambiado números ya calculados en el sistema anterior; dejarlas sin marcar habría dejado pasar el valor de
+   una en la otra. Con los `CHECK` cruzados, el error se ve en el `INSERT`.
+4. **El PIN de la banca en línea deja de guardarse en claro.** Era `PIN NVARCHAR(4)` legible en la tabla, y el
+   código de verificación también: cualquiera con `SELECT` entraba como el socio. Ahora los dos usan el
+   dominio **`tecnifin.hash_secreto`**, que exige el formato `<algoritmo>$<cuerpo>` que emite
+   `hashearClave()` de `src/platform/credenciales.js`. Un `CHECK` de longitud mínima habría sido una
+   heurística disfrazada de invariante —una clave en claro de veinte caracteres pasaría—; el formato, no. La
+   etiqueta de algoritmo permite además rotar la función sin migrar las filas viejas. El código de
+   verificación lleva caducidad obligatoria. **Pendiente relacionado:** `socios.pin` y `usuarios.pin` de
+   DAT-01 siguen en claro, heredados del origen. Es una migración aditiva y una decisión de seguridad
+   (ver Preguntas abiertas, PA6).
+5. **`reclasificacion_cartera` gana `asiento_id`.** El origen guardaba solo el monto provisionado, así que la
+   reversa no podía enlazarse con lo que había asentado y tenía que buscar el asiento por fecha y concepto.
+6. **Las cuentas del detalle del proceso son FK reales** contra el plan de la propia cooperativa. En el origen
+   eran texto libre, y por eso `30_*.sql` terminaba con una consulta manual de verificación.
+7. **`es_agrupador` del plan sembrado se deriva de la jerarquía**, no se copia de la fuente: una cuenta es
+   agrupadora si y solo si tiene hijas en el catálogo. La bandera del origen marcaba como agrupadoras 101
+   cuentas cuyas únicas hijas eran auxiliares de la entidad, que no se sembraron; con la bandera copiada, una
+   cooperativa nueva se quedaba sin cuenta donde contabilizar los depósitos de ahorro.
+8. **El nivel de 8 dígitos del catálogo de origen no entra**, y la prueba de higiene lo exige. Es el auxiliar
+   que abre cada entidad y contenía **nombres de personas** (anticipos al personal) y de instituciones
+   concretas. Junto con tres cuentas de 6 dígitos que nombraban instituciones y 19 de relleno, el catálogo
+   queda en **994 cuentas** de niveles 1/2/4/6.
+9. **La siembra es JavaScript, no una función SQL.** Una función SQL no puede leer `db/seeds/` sin `COPY`
+   (superusuario), así que el catálogo tendría que vivir duplicado dentro de una migración. `altaCooperativa()`
+   de `src/platform/semillas.js` es el único camino de alta —lo usa también la fábrica de pruebas, para que no
+   haya dos— y siembra por `withTenant`, sin nombrar `cooperativa_id`.
+
+### La base nace en blanco, y la demostración va aparte
+
+`tecnifin_demo` se crea y se recrea con `npm run demo:crear`: mismas migraciones y mismos dos roles, nombre
+propio. El nombre **tiene que terminar en `_demo`** y no puede coincidir con `TECNIFIN_PG_DATABASE`; las dos
+comprobaciones existen para que un valor mal puesto en `.env` no borre la base de desarrollo o la de
+producción. El contenido se construye **por `withTenant` y con el rol de la aplicación**, con cédulas válidas
+generadas por el módulo 10 y nombres inequívocamente falsos.
+
+Cuatro pruebas nuevas sostienen la regla 11: base recién migrada con **cero filas** en las 38 tablas de
+negocio (contadas con el superusuario, porque con `FORCE` un cero del dueño no probaría nada); la demo con
+datos y la base de trabajo vacía; recrear la demo deja el mismo contenido; y las semillas no contienen
+códigos fuera de los niveles nacionales ni nombres de entidades.
 
 ### Once decisiones tomadas al construir que este ADR no tenía
 
@@ -334,9 +412,22 @@ Criterio de aceptación: las 11 en verde en CI sobre `tecnifin_dev`, más las pr
 3. **Plan de cuentas uno por cooperativa**, sin relación entre cooperativas (§ Reglas 3).
 4. **Imágenes dentro de la base** (`bytea`). Consecuencia: los respaldos crecen; el volumen sigue siendo la Pregunta
    abierta 3 para Christian, pero ya no como alternativa de diseño sino como dato de capacidad.
-5. **DAT-02 abierto**: cartera SEPS (reclasificación y provisiones), solvencia regulatoria (ponderaciones, patrimonio
-   técnico, parámetros), tasas de crédito, activación de la banca en línea y excepciones de documentos del socio.
-   Todas por cooperativa y con RLS `FORCE`.
+5. ~~**DAT-02 abierto**~~: **cerrado**. Cartera SEPS (reclasificación y provisiones), solvencia regulatoria
+   (ponderaciones, patrimonio técnico, parámetros), tasas de crédito, activación de la banca en línea y
+   excepciones de documentos del socio. Las nueve, por cooperativa y con RLS `FORCE`. Ver «Resultado de DAT-02».
+
+### Preguntas abiertas que DAT-02 dejó
+
+| # | Pregunta | Para quién | Qué bloquea |
+|---|---|---|---|
+| **PA6** | **`socios.pin` y `usuarios.pin` siguen en claro** (`varchar(4)`), heredados del sistema anterior. DAT-02 hasheó el PIN de la banca en línea, con lo que el esquema quedó incoherente: el PIN del canal móvil está protegido y el de ventanilla no. ¿Se hashean también? | Christian (seguridad) · Jorge | No bloquea a H1: es una migración **aditiva** (`pin_hash` + backfill) y la decisión se necesita antes de M1 (socios) y M2 (autenticación), porque después hay pantallas que ya lo escriben |
+| **PA7** | **Unidad de `tasas_credito.plazo_minimo/maximo`.** El origen traía `1..360` sin documentar si son meses o días. DAT-02 asume **meses**, por coherencia con `creditos.plazo` y con el motor de amortización, que avanza las cuotas con `DATEADD(MONTH, …)` | Jorge / negocio | Nada hoy (no hay dato migrado). Si fueran días, cambia el `CHECK` y las validaciones de M3, no el tipo |
+| **PA8** | **Nombres del Catálogo Único truncados a ~30 caracteres** por el ancho de la columna en el sistema de origen (`(PROVISIONES PARA CREDITOS INC)`). ¿Se reemplaza el archivo de semilla por el catálogo completo de la SEPS? | Jorge | Nada técnico: se cambia el archivo y se vuelve a sembrar. Importa para los reportes que imprimen el nombre de la cuenta |
+| **PA9** | **Una cuenta de movimiento que reciba subcuentas tiene que pasar a agrupadora.** Hoy es una regla escrita, no un trigger. ¿Se hace cumplir por el motor, como la partida doble? | Desarrollo | Nada. Es una migración aditiva; se decide al abrir M5 (contabilidad) |
+| **PA10** | **Las bandas de mora se detectan parseando el NOMBRE de la cuenta** (`'De 91 a 270 días'`), como en el sistema anterior. Pero el plan es **editable y de cada cooperativa**: si una renombra la cuenta a `'91-270 d.'`, el motor de cartera pierde la banda y no falla nada. La alternativa es guardarlas como dato: `plan_cuentas.banda_dias_desde/hasta`, pobladas al sembrar, y el parseo se va al generador de la semilla | Desarrollo · Jorge | Se decide **antes de portar el motor de cartera** (M6). Después, cuesta reescribir sus consultas. La migración en sí es aditiva |
+| **PA11** | **`creditos.tipo` es texto libre** y el segmento se deduce uniéndolo con `tasas_credito.linea_credito`. Un crédito cuyo tipo no coincida con ninguna línea se queda sin segmento y **sin provisión**, en silencio. La defensa real sería una FK compuesta `(cooperativa_id, tipo)` contra el tarifario —el `UNIQUE` destino ya existe— o una columna `creditos.segmento` con el dominio | Desarrollo | Se decide al abrir M3 (créditos). Hoy solo lo detecta la prueba de la demo, que es el nivel equivocado |
+| **PA12** | **Los rangos de mora de `parametros_provision_cartera` pueden solaparse.** El `UNIQUE (segmento, calificación)` no lo impide, y una cooperativa edita esa tabla. Con dos filas aplicables, la consulta devuelve una cualquiera y la provisión cambia sin aviso. Se cierra con un `EXCLUDE USING gist (… int4range(…) WITH &&)`, que necesita la extensión `btree_gist` | Christian (extensión) · Desarrollo | Nada hoy. Es dinero regulatorio: conviene antes de que una cooperativa edite sus parámetros en producción |
+| **PA13** | **El detalle de una corrida aplicada es editable y borrable** (`ON DELETE CASCADE`, y la aplicación tiene `DELETE`). La reversa reconstruye desde ese detalle, así que su inmutabilidad es hoy un comentario, no una regla del motor. La plataforma ya tiene `aplicar_rls(tabla, true)` para esto; el costo es que dejarían de poder borrarse las simulaciones | Desarrollo | Se decide al portar el proceso de cartera (M6) |
 
 ### Supuestos pendientes con los que DAT-01 ya construyó
 

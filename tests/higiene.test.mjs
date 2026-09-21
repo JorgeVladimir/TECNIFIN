@@ -68,6 +68,32 @@ test('regla 11: sin datos ni referencias a cooperativas concretas o a la base de
   assert.deepEqual(culpables, []);
 });
 
+test('regla 11: las semillas son catalogo publico, sin entidades ni personas', () => {
+  const dir = join(ROOT, 'db/seeds');
+  const semillas = readdirSync(dir).filter(n => n.endsWith('.json'));
+  assert.ok(semillas.length >= 6, 'faltan archivos de semilla');
+
+  const { filas } = JSON.parse(readFileSync(join(dir, 'plan_cuentas_seps.json'), 'utf8'));
+  // El Catalogo Unico nacional llega hasta seis digitos. El nivel de OCHO digitos es el
+  // auxiliar que abre cada entidad, y en el sistema anterior contenia nombres de
+  // personas (anticipos al personal) y de instituciones concretas. No puede entrar aqui:
+  // no es una preferencia de estilo, es de donde salio la fuga.
+  // Solo la regla que es del ARCHIVO. Que el tipo de cuenta sea uno de los siete validos
+  // ya lo exige ck_plan_cuentas_tipo cuando la semilla se inserta, y repetir la lista
+  // aqui seria un segundo sitio donde diverge.
+  for (const fila of filas) {
+    assert.match(fila.codigo, /^[0-9]{1,6}$/, `codigo fuera del catalogo nacional: ${fila.codigo}`);
+  }
+
+  // Nombres de instituciones concretas: una cuenta del catalogo nacional nunca los lleva.
+  const instituciones = new RegExp(['pichi' + 'ncha', 'guaya' + 'quil', 'coodesa' + 'rrollo',
+    'fec' + 'oac', 'nueva gene' + 'racion'].join('|'), 'i');
+  for (const nombre of semillas) {
+    const texto = readFileSync(join(dir, nombre), 'utf8');
+    assert.doesNotMatch(texto, instituciones, `la semilla ${nombre} nombra a una entidad concreta`);
+  }
+});
+
 test('regla 9: identificadores TECNIFIN, sin prefijo GUTT_ en codigo nuevo', () => {
   const culpables = archivos
     .filter(f => /^(src|tools)\//.test(rel(f)) && ['.js', '.mjs'].includes(extname(f)))

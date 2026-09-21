@@ -1,0 +1,17 @@
+{
+  "_": "Circulante del USD. Es nacional, pero cada cooperativa habilita el suyo.",
+  "filas": [
+  {"codigo_denominacion":"B100","valor":100,"tipo":"BILLETE","descripcion":"Billete de $100.00"},
+  {"codigo_denominacion":"B50","valor":50,"tipo":"BILLETE","descripcion":"Billete de $50.00"},
+  {"codigo_denominacion":"B20","valor":20,"tipo":"BILLETE","descripcion":"Billete de $20.00"},
+  {"codigo_denominacion":"B10","valor":10,"tipo":"BILLETE","descripcion":"Billete de $10.00"},
+  {"codigo_denominacion":"B5","valor":5,"tipo":"BILLETE","descripcion":"Billete de $5.00"},
+  {"codigo_denominacion":"B1","valor":1,"tipo":"BILLETE","descripcion":"Billete de $1.00"},
+  {"codigo_denominacion":"M1","valor":1,"tipo":"MONEDA","descripcion":"Moneda de $1.00"},
+  {"codigo_denominacion":"M0.50","valor":0.5,"tipo":"MONEDA","descripcion":"Moneda de $0.50"},
+  {"codigo_denominacion":"M0.25","valor":0.25,"tipo":"MONEDA","descripcion":"Moneda de $0.25"},
+  {"codigo_denominacion":"M0.10","valor":0.1,"tipo":"MONEDA","descripcion":"Moneda de $0.10"},
+  {"codigo_denominacion":"M0.05","valor":0.05,"tipo":"MONEDA","descripcion":"Moneda de $0.05"},
+  {"codigo_denominacion":"M0.01","valor":0.01,"tipo":"MONEDA","descripcion":"Moneda de $0.01"}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "_": "Limites regulatorios en clave/valor: minimo de solvencia, topes y umbrales.",
+  "filas": [
+  {"clave":"MOROSIDAD_ALERTA","valor":0.05,"unidad":"ratio","descripcion":"Umbral de morosidad ampliada a partir del cual el tablero levanta alerta de calidad de activos","base_normativa":"Practica de supervision SEPS (parametro interno, no limite legal)"},
+  {"clave":"PROVISION_GENERAL_TOPE_APR","valor":0.0125,"unidad":"ratio","descripcion":"Tope de la provision general de cartera computable como patrimonio secundario, sobre los APR","base_normativa":"Resolucion 127-2015-F (JPRMF)"},
+  {"clave":"PT_SECUNDARIO_TOPE_PRIMARIO","valor":1,"unidad":"ratio","descripcion":"El patrimonio tecnico secundario no puede superar al primario","base_normativa":"Resolucion 127-2015-F (JPRMF)"},
+  {"clave":"SOLVENCIA_MINIMA","valor":0.09,"unidad":"ratio","descripcion":"Relacion minima entre el patrimonio tecnico constituido y los activos ponderados por riesgo","base_normativa":"Resolucion 127-2015-F (JPRMF)"}
+  ]
+}

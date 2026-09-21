@@ -17,9 +17,17 @@ npm install            # una vez
 npm run db:init        # crea los DOS roles y la base LOCALES (usa TECNIFIN_PG_ADMIN_PASSWORD, la del superusuario)
 npm run migrate        # estado; sale con 1 si hay pendientes. Corre como tecnifin_admin
 npm run migrate:apply  # aplica lo pendiente, en orden, transaccional, con SHA-256
-npm test               # unitarias + higiene + aislamiento (crea y borra su propia base efímera)
+npm test               # unitarias + higiene + aislamiento + semillas + demo (crean y borran sus bases)
 npm run test:aislamiento  # solo la prueba de aislamiento entre dos cooperativas
+npm run demo:crear     # borra y recrea la base de DEMOSTRACIÓN entera (tecnifin_demo)
 ```
+
+**La base de demostración es otra base.** `demo:crear` la borra y la vuelve a crear desde cero con las mismas
+migraciones y los mismos dos roles; solo cambia el nombre. Para conectarse a ella se usa el mismo `.env`
+cambiando **una** variable: `TECNIFIN_PG_DATABASE=tecnifin_demo`. El nombre sale de
+`TECNIFIN_PG_DEMO_DATABASE` y **tiene que terminar en `_demo`**: es lo que impide que un valor mal puesto
+borre la base de desarrollo o la de producción. Los usuarios de la demo solo tienen clave utilizable si
+`TECNIFIN_DEMO_PASSWORD` está en `.env`; sin ella la demo se crea igual y nadie entra.
 
 **Dos roles, y no se mezclan** (ADR-0002): `tecnifin_admin` es dueño del esquema y el único que hace DDL
 (`TECNIFIN_PG_ADMIN_USER` / `TECNIFIN_PG_ADMIN_DB_PASSWORD`); `tecnifin_app` es el de la aplicación, solo
@@ -75,11 +83,17 @@ Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero creden
 Fase 0 (creación del proyecto) en curso. Primer hito: **H1**, modelo de base multi-tenant en PostgreSQL,
 aceptado por acta el **30-oct-2026**.
 
-**DAT-01 construido** (borrador, pendiente de acta): 10 migraciones en `db/migrations/`, **31 tablas** con
-`FORCE ROW LEVEL SECURITY` sin excepciones, `withTenant()` en `src/platform/tenant.js`, fábrica de dos
-cooperativas en `tests/fixtures/` y prueba de aislamiento contra base efímera. El patrón de traducción
-—mapeo de nombres, consulta antes/después, qué probar— está en
-**`docs/patrones/01-plataforma-multitenant.md`**: se lee antes de portar cualquier módulo y no se re-deriva.
+**DAT-01 y DAT-02 construidos** (borrador, pendiente de acta): 13 migraciones en `db/migrations/`,
+**40 tablas** (38 de negocio + 2 de plataforma) con `FORCE ROW LEVEL SECURITY` sin excepciones, **42 políticas
+RLS** y 4 dominios que guardan las reglas que antes eran listas copiadas (código contable, segmento,
+calificación, hash de secretos), `withTenant()` en `src/platform/tenant.js`, alta y siembra de cooperativas en
+`src/platform/semillas.js`, semillas del Catálogo Único SEPS en `db/seeds/` y base de demostración
+reproducible. `npm test`: **44 pruebas en verde**.
+
+Los dos patrones de traducción se leen antes de portar cualquier módulo y no se re-derivan:
+**`docs/patrones/01-plataforma-multitenant.md`** (mapeo de nombres, consulta antes/después, `withTenant`,
+qué probar) y **`docs/patrones/02-catalogos-y-demo.md`** (las 9 tablas de DAT-02, cómo se siembra una
+cooperativa, las bandas SEPS leídas del plan, el proceso de cartera y la base de demostración).
 
 Toda migración que agregue una tabla llama a `SELECT tecnifin.aplicar_rls('tecnifin.<tabla>')`.
 No es una convención que haya que recordar: `migrate.mjs` corre `tecnifin.verificar_invariantes()` después
@@ -88,4 +102,6 @@ política o con una FK sin índice **no llega a existir**.
 
 Los ADR-0001/0002/0003 siguen en **propuesta**: Christian Cuenca no los ha revisado y ADR-0002 no se aprueba
 por silencio. Tres supuestos de DAT-01 esperan respuesta de Jorge (sucursales, precisión de tasas, formato
-de los códigos visibles): están en ADR-0003, sección «Supuestos pendientes».
+de los códigos visibles) y cuatro preguntas quedaron abiertas en DAT-02 —la más urgente, **los PIN de
+`socios` y `usuarios` siguen en claro** (PA6, seguridad: Christian)—. Todas en ADR-0003, secciones
+«Supuestos pendientes» y «Preguntas abiertas que DAT-02 dejó».

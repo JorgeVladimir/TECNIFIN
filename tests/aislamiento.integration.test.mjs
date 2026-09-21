@@ -8,7 +8,9 @@ import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { REPO_ROOT, entornoAdmin } from '../tools/_env.mjs';
-import { conectarSuperusuario, identificador } from '../tools/_local.mjs';
+import {
+  conectarSuperusuario, crearBaseLocal, borrarBaseLocal, migrarBase, tablasDeNegocio, recorrerTablas,
+} from '../tools/_local.mjs';
 import { connectPostgres, postgresConfig } from '../src/platform/postgres.js';
 import { crearWithTenant } from '../src/platform/tenant.js';
 import { crearDosCooperativas, sembrarCooperativa, crearSocio } from './fixtures/cooperativas.mjs';
@@ -19,49 +21,40 @@ const entorno = { ...process.env, TECNIFIN_PG_DATABASE: nombreBase };
 const migrar = args => ejecutar(process.execPath, ['tools/migrate.mjs', ...args],
   { cwd: REPO_ROOT, env: entorno, windowsHide: true });
 
-let superusuario, app, admin, withTenant, creada = false;
-let coopA, coopB, datosA, datosB, tablasDeNegocio;
+let app, admin, withTenant, creada = false;
+let coopA, coopB, datosA, datosB, tablas;
 
-// Un solo viaje para recorrer las 31 tablas: se arma un UNION ALL con los nombres que
-// devolvio el catalogo. En vez de 31 idas y vueltas por caso de prueba, una.
-const recorrerTablas = (ejecutor, expresion) => ejecutor.query(
-  tablasDeNegocio.map(t =>
-    `SELECT '${t}' AS tabla, ${expresion} FROM tecnifin.${t}`).join(' UNION ALL '));
+const recorrer = (ejecutor, expresion) => recorrerTablas(ejecutor, tablas, expresion);
 
 before(async () => {
   const configuracion = postgresConfig();
-  const dueno = entornoAdmin().TECNIFIN_PG_USER;
-  superusuario = await conectarSuperusuario(configuracion);
-  await superusuario.query(
-    `CREATE DATABASE ${identificador(nombreBase)} OWNER ${identificador(dueno)}`
-    + ` TEMPLATE template0 ENCODING 'UTF8'`);
+  // Misma provision que la base real: dueno, GRANT CONNECT y REVOKE CREATE incluidos.
+  await crearBaseLocal(configuracion, nombreBase,
+    { dueno: entornoAdmin().TECNIFIN_PG_USER, aplicacion: configuracion.user });
   creada = true;
 
-  await migrar(['--aplicar']);
+  await migrarBase(entorno);
 
   admin = connectPostgres(entornoAdmin(entorno));
   app = connectPostgres(entorno);
   withTenant = crearWithTenant(app);
 
-  [coopA, coopB] = await crearDosCooperativas(admin);
+  [coopA, coopB] = await crearDosCooperativas(admin, withTenant);
   // Tenants distintos: no hay motivo para sembrarlos en serie.
   [datosA, datosB] = await Promise.all([
     sembrarCooperativa(withTenant, coopA.cooperativa_id, 'ALFA'),
     sembrarCooperativa(withTenant, coopB.cooperativa_id, 'BETA'),
   ]);
 
-  tablasDeNegocio = (await admin.query(
-    `SELECT relname FROM pg_class
-      WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'
-        AND coalesce(obj_description(oid, 'pg_class'), '') NOT LIKE 'plataforma:%'
-      ORDER BY relname`)).rows.map(f => f.relname);
+  tablas = await tablasDeNegocio(admin);
 });
 
 after(async () => {
   if (app) await app.close();
   if (admin) await admin.close();
-  if (superusuario) {
-    try { if (creada) await superusuario.query(`DROP DATABASE ${identificador(nombreBase)}`); }
+  if (creada) {
+    const superusuario = await conectarSuperusuario(postgresConfig());
+    try { await borrarBaseLocal(superusuario, nombreBase); }
     finally { await superusuario.end(); }
   }
 });
@@ -76,17 +69,18 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
 
   const dueno = entornoAdmin().TECNIFIN_PG_USER;
   const aplicacion = postgresConfig().user;
-  const tablas = await admin.query(
+  const catalogo = await admin.query(
     `SELECT count(*)::int AS total,
             count(*) FILTER (WHERE pg_get_userbyid(relowner) <> @dueno)::int AS ajenas,
             count(*) FILTER (WHERE NOT relforcerowsecurity)::int AS sin_force
        FROM pg_class
       WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'`, { dueno });
-  // 31 = las 30 de db/gutt_system/01-09 menos SecuenciaDPF, mas parametros_plataforma y
-  // secuencias_tenant. Si cambia, se actualiza el inventario de ADR-0003 a la vez.
-  assert.deepEqual(tablas.rows[0], { total: 31, ajenas: 0, sin_force: 0 },
+  // 40 = las 31 de DAT-01 mas las 9 de DAT-02 (cartera SEPS, solvencia, tarifario de
+  // credito, canal en linea y excepcion de documento). Si cambia, se actualiza el
+  // inventario de ADR-0003 a la vez.
+  assert.deepEqual(catalogo.rows[0], { total: 40, ajenas: 0, sin_force: 0 },
     'toda tabla del esquema es del dueno y lleva FORCE, sin excepciones');
-  assert.equal(tablasDeNegocio.length, 29, 'solo cooperativas y parametros_plataforma son de plataforma');
+  assert.equal(tablas.length, 38, 'solo cooperativas y parametros_plataforma son de plataforma');
 
   const rol = await admin.query(
     `SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = @rol`,
@@ -102,7 +96,7 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
 
 // (ii) Sin tenant fijado no se ve el universo: se ven cero filas.
 test('sin withTenant no se ve ninguna fila de ninguna tabla de negocio', async () => {
-  const visto = await recorrerTablas(app, 'count(*)::int AS n');
+  const visto = await recorrer(app, 'count(*)::int AS n');
   assert.deepEqual(visto.rows.filter(f => f.n !== 0), [], 'alguna tabla devolvio filas sin tenant');
 
   // Tambien falla cerrada al escribir: sin tenant, el DEFAULT de cooperativa_id queda
@@ -122,7 +116,7 @@ test('sin withTenant no se ve ninguna fila de ninguna tabla de negocio', async (
 test('la cooperativa A no lee ni escribe filas de la B en ninguna tabla', async () => {
   for (const propia of [coopA, coopB]) {
     const visto = await withTenant(propia.cooperativa_id, tx =>
-      recorrerTablas(tx, `count(*)::int AS total,
+      recorrer(tx, `count(*)::int AS total,
         count(*) FILTER (WHERE cooperativa_id <> ${propia.cooperativa_id})::int AS ajenas`));
     assert.deepEqual(visto.rows.filter(f => f.ajenas > 0), [],
       `filas de otra cooperativa visibles desde ${propia.codigo}`);
@@ -297,9 +291,10 @@ test('el codigo contable solo acepta digitos y el migrador detecta un archivo al
       `INSERT INTO tecnifin.plan_cuentas (codigo, nombre, tipo_cuenta)
        VALUES ('2.1.03.05', 'PUNTEADO', 'PASIVO')`)),
     error => error.code === '23514');
+  // Codigo fuera del Catalogo Unico sembrado: el catalogo ya ocupa los reales.
   await withTenant(coopA.cooperativa_id, tx => tx.query(
     `INSERT INTO tecnifin.plan_cuentas (codigo, nombre, tipo_cuenta)
-     VALUES ('210305', 'DEPOSITOS A PLAZO DE 1 A 30 DIAS', 'PASIVO')`));
+     VALUES ('888888', 'CUENTA PROPIA DE LA COOPERATIVA', 'PASIVO')`));
 
   await admin.query(
     `UPDATE public.tecnifin_schema_migrations SET content_hash = 'alterado' WHERE file_name = '0001_plataforma.sql'`);

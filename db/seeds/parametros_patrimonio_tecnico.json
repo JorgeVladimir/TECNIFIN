@@ -1,0 +1,20 @@
+{
+  "_": "Componentes del patrimonio tecnico constituido: primario, secundario y deducciones.",
+  "filas": [
+  {"componente":"DEDUCCION","prefijo_cuenta":"1905","factor":1,"saldo_como":"DEUDOR","limite_pct_apr":null,"descripcion":"Gastos diferidos y plusvalia mercantil","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"DEDUCCION","prefijo_cuenta":"3602","factor":1,"saldo_como":"DEUDOR","limite_pct_apr":null,"descripcion":"(Perdidas acumuladas)","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"DEDUCCION","prefijo_cuenta":"3604","factor":1,"saldo_como":"DEUDOR","limite_pct_apr":null,"descripcion":"(Perdida del ejercicio)","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"PRIMARIO","prefijo_cuenta":"31","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Capital social - aportes de socios","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"PRIMARIO","prefijo_cuenta":"3301","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Reservas legales (irrepartibles)","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"PRIMARIO","prefijo_cuenta":"3310","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Reservas por resultados no operativos","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"PRIMARIO","prefijo_cuenta":"3402","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Otros aportes patrimoniales","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"PRIMARIO","prefijo_cuenta":"3601","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Utilidades o excedentes acumulados","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"149930","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":0.0125,"descripcion":"Provision general para cartera - computa hasta 1.25% de los APR","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3303","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Reservas especiales","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3305","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Reserva por revalorizacion del patrimonio","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3490","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Otros aportes patrimoniales - otros","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3501","factor":0.5,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Superavit por valuacion de propiedades (computa al 50%)","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3502","factor":0.5,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Superavit por valuacion de inversiones (computa al 50%)","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"},
+  {"componente":"SECUNDARIO","prefijo_cuenta":"3603","factor":1,"saldo_como":"ACREEDOR","limite_pct_apr":null,"descripcion":"Utilidad del ejercicio","base_normativa":"Resolucion 127-2015-F (JPRMF) - composicion del patrimonio tecnico de las COAC"}
+  ]
+}

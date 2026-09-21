@@ -1,0 +1,33 @@
+{
+  "_": "Ponderacion por familia de activo. Gana el prefijo mas largo que calce con el codigo.",
+  "filas": [
+  {"prefijo_cuenta":"11","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Fondos disponibles no cubiertos por una categoria especifica","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1101","ponderacion":0,"categoria":"0% - Sin riesgo","descripcion":"Caja: efectivo y billetes","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1103","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Bancos y otras instituciones financieras","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1104","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Efectos de cobro inmediato","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1105","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Remesas en transito","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"12","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Operaciones interbancarias no cubiertas por una categoria especifica","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1201","ponderacion":0.1,"categoria":"10% - Interbancario","descripcion":"Fondos interbancarios vendidos","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1202","ponderacion":0.1,"categoria":"10% - Interbancario","descripcion":"Operaciones de reporto con instituciones financieras","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"13","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Inversiones no cubiertas por una categoria especifica","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1301","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Inversiones para negociar de entidades del sector privado","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1302","ponderacion":0,"categoria":"0% - Sin riesgo","descripcion":"Inversiones para negociar del Estado o entidades del sector publico","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1303","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Inversiones disponibles para la venta del sector privado","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1304","ponderacion":0,"categoria":"0% - Sin riesgo","descripcion":"Inversiones disponibles para la venta del Estado o del sector publico","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1305","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Inversiones mantenidas hasta el vencimiento del sector privado","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1306","ponderacion":0,"categoria":"0% - Sin riesgo","descripcion":"Inversiones mantenidas hasta el vencimiento del Estado o del sector publico","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1307","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Inversiones de disponibilidad restringida","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1399","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"(Provision para inversiones) - pondera junto al activo que reduce","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"14","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Cartera de credito (comercial, consumo y microempresa)","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1403","ponderacion":0.4,"categoria":"40% - Vivienda hipotecaria","descripcion":"Cartera de credito de vivienda por vencer","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1413","ponderacion":0.4,"categoria":"40% - Vivienda hipotecaria","descripcion":"Cartera de vivienda que no devenga intereses","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1423","ponderacion":0.4,"categoria":"40% - Vivienda hipotecaria","descripcion":"Cartera de vivienda vencida","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"149915","ponderacion":0.4,"categoria":"40% - Vivienda hipotecaria","descripcion":"(Provision cartera de vivienda) - pondera junto al activo que reduce","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"16","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Cuentas por cobrar","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1602","ponderacion":0.2,"categoria":"20% - Sistema financiero","descripcion":"Intereses por cobrar de inversiones","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"17","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Bienes realizables, adjudicados por pago y recuperados","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"18","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Propiedades y equipo","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"19","ponderacion":1,"categoria":"100% - Riesgo pleno","descripcion":"Otros activos","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"},
+  {"prefijo_cuenta":"1910","ponderacion":0,"categoria":"0% - Sin riesgo","descripcion":"Divisas","base_normativa":"Resolucion 127-2015-F (JPRMF) - patrimonio tecnico de las COAC"}
+  ]
+}
