@@ -1,7 +1,7 @@
 # Encargo: corregir los hallazgos MEDIO y los ALTO mecánicos de la revisión cruzada de DAT-01/02
 
 **Rol:** `docs/roles/ejecutor.md` · **Perfil:** `ejecutor-dinero` (GPT-5.6-Sol, `high`) · **Informe de origen:** `docs/handoff/revision-cruzada-dat01-02-informe.md` (léelo completo; tiene archivo:línea y reproducción de cada hallazgo).
-**Rama:** crea `wip/correcciones-revision` desde `main`; **no** fusiones en `main`, **no** hagas `git push`.
+**Rama:** el orquestador ya creó y activó `wip/correcciones-revision`. **No** ejecutes comandos de escritura de git (tu sandbox tiene `.git` en solo lectura): edita archivos y deja el árbol en verde; el orquestador hace el commit. No fusiones ni hagas `git push`.
 
 ## Alcance (solo esto)
 1. **ALTO 2** — trigger de partida doble (`db/migrations/0007_contabilidad.sql:135`): la marca de cuadre evita revalidar dentro de la misma transacción y se elude cambiando de tenant. El cuadre debe recalcularse **siempre** que cambie una línea del asiento, sin marca que lo omita.
@@ -16,7 +16,7 @@
 - Los riesgos ya documentados (PA6, PA9-PA13).
 
 ## Reglas
-Las migraciones ya aplicadas **no se editan** (cambia su hash): agrega migraciones nuevas `0014+` para los cambios de esquema; los seeds y el código sí se editan. Cada migración nueva llama a `aplicar_rls` cuando cree tablas. `npm run verificar` en verde antes de cada commit; un commit por hallazgo.
+Las migraciones ya aplicadas **no se editan** (cambia su hash): agrega migraciones nuevas `0014+` para los cambios de esquema; los seeds y el código sí se editan. Cada migración nueva llama a `aplicar_rls` cuando cree tablas. `npm run verificar` en verde antes de cada commit; deja un archivo `docs/handoff/mensajes-commit.md` con una línea por hallazgo (para el historial).
 
 ## Entrega (máx. 25 líneas)
-Por hallazgo: corregido/no, commit, prueba que lo demuestra. Resultado final de `npm run verificar` y cuántas migraciones nuevas. Al terminar, agrega una línea a `docs/handoff/ESTADO.md` en tu rama.
+Por hallazgo: corregido/no, archivos, prueba que lo demuestra. Resultado final de `npm run verificar` y cuántas migraciones nuevas. Al terminar, agrega una línea a `docs/handoff/ESTADO.md` en tu rama.

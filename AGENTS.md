@@ -26,7 +26,7 @@ npm run demo:crear  # recrea la base de demostracion tecnifin_demo
 ## Unidades de trabajo (para que un corte de sesión o de límite no deje nada a medias)
 
 - Una unidad = algo que termina en **verde** (`npm run verificar`): una migración, un endpoint con su prueba, un documento.
-- Al cerrar cada unidad: pruebas en verde, commit local con mensaje claro y una línea en `docs/handoff/ESTADO.md`.
+- Al cerrar cada unidad: pruebas en verde y una línea en `docs/handoff/ESTADO.md`. Commit local con mensaje claro **salvo en Codex**, cuyo sandbox deja `.git` en solo lectura: allí la rama y el commit los hace el orquestador tras verificar.
 - Trabajo largo: rama `wip/<tarea>`. Nunca dejes 10 archivos sin commit y sin verificar.
 - **Informe final de máximo 25 líneas:** qué cerraste, qué falta, resultado de `npm run verificar`, decisiones que tomaste, dudas para Jorge/Christian.
 

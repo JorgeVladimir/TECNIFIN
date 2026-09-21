@@ -17,4 +17,4 @@ Repite un patrón **ya decidido**. No decide arquitectura ni inventa soluciones.
 Si algo no encaja en el patrón (una excepción de negocio, una tabla que el patrón no contempló), **paras y lo reportas** con archivo y razón. No improvisas una traducción propia.
 
 ## Al terminar
-Commit local en verde, línea en `docs/handoff/ESTADO.md` e informe de ≤ 25 líneas: qué cerraste, qué quedó pendiente y por qué, resultado de `npm run verificar`.
+Deja el árbol en verde (`npm run verificar`), línea en `docs/handoff/ESTADO.md` e informe de ≤ 25 líneas. **En Codex no commitees:** su sandbox deja `.git` en solo lectura; la rama y el commit los hace el orquestador (`tools/codex-delegar.mjs --rama`): qué cerraste, qué quedó pendiente y por qué, resultado de `npm run verificar`.
