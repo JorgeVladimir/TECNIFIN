@@ -95,6 +95,7 @@ export function createDatabase(pool) {
       } catch (error) {
         try { await client.query('ROLLBACK'); }
         catch (rollbackError) { broken = rollbackError; }
+        if (error?.descartarConexion) broken = error;
         throw error;
       } finally { client.release(broken); }
     },

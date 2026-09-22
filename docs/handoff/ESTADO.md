@@ -3,21 +3,22 @@
 **Modo:** RESERVA — Claude Code ha llegado al ~90 % del limite semanal (88 % semanal / 89 % de sesion a las 20:53; reinicia el jueves 24-sep 11:59). Codex continua solo; Claude solo orquesta con el minimo de tokens.
 **Actualizado:** 2026-09-22 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Hito H1:** modelo de BD multi-tenant, acta el 30-oct-2026.
 
-## Hecho (último commit verde: `97adaef`, 44 pruebas, 13 migraciones)
+## Hecho (último commit verde: `5fecbe5`; entrega APP-01 sin commit: 62 pruebas, 15 migraciones)
 - Fase 0: proyecto, reglas 1-14, pruebas de higiene, CI verde en GitHub (ejecución #1 sobre `953ee54`).
 - DAT-01: 31 tablas multi-tenant, RLS `FORCE`, `withTenant`, roles `tecnifin_admin`/`tecnifin_app`, numeración por cooperativa desde 1.
 - DAT-02: cartera SEPS, solvencia, tasas de crédito, banca en línea; semillas del Catálogo Único (994 cuentas, por cooperativa); base `tecnifin_demo`. 40 tablas, 42 políticas.
 - Borradores ADR-0001/0002/0003 y ARQ-01 (estado «propuesta»).
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
+- APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03.
 
 ## En curso
-Unidad 2b entregada en `wip/alto1-fijacion-tenant`, pendiente de revisión expresa de Christian y commit del
-orquestador. La siguiente unidad es redactar el encargo #3 (APP-01), respetando las preguntas abiertas.
+Unidad 3 APP-01 entregada en `wip/app01-patron`, pendiente de revisión y commit del orquestador. La siguiente
+unidad es redactar y ejecutar el resto de endpoints de plataforma (#4) repitiendo el patrón 03.
 
 ## Riesgos vivos
 - ADR-0001/0002/0003 sin revisar por Christian (ADR-0002 no se aprueba por silencio).
-- ALTO 1: decisión provisional de Jorge (22-sep), opción 1 con controles; SQL arbitrario aún permite acceso cruzado. JWT y detección/alerta pendientes APP-01; no habilita producción.
+- ALTO 1: opción 1 con controles implementados; SQL arbitrario aún puede cambiar y restaurar el tenant dentro de una sentencia sin ser detectado. Christian debe aceptar el riesgo; no habilita producción.
 - `socios.pin` y `usuarios.pin` en claro (PA6, seguridad).
 - Push a GitHub: lo hace Jorge; hay 4 commits locales sin subir en este repo.
 
@@ -34,3 +35,4 @@ orquestador. La siguiente unidad es redactar el encargo #3 (APP-01), respetando 
 
 ## 22-sep
 - Unidad 2b entregada: adenda ADR-0002 (opción 1 provisional de Jorge; Christian pendiente), patrón y pendientes actualizados, higiene de fijación y caracterización adversaria A→B con rollback. `npm run verificar`: 54/54, 14 migraciones, 0 pendientes; sin cambio de esquema, commit a cargo del orquestador. ALTO 1 sigue como riesgo residual, no como corrección aprobada.
+- Unidad 3 APP-01 entregada: tres endpoints de patrón, JWT desde identidad verificada, tabla `parametros_cooperativa`, auditoría, control/alerta de desvío y documento patrón 03. `npm run verificar`: 62/62, 15 migraciones, 0 pendientes; commit a cargo del orquestador. Vida/refresh/invalidación JWT y PA6 siguen abiertas.

@@ -257,8 +257,8 @@ de la protección de estas opciones; requeriría separar procesos y credenciales
 |---|---|---|
 | Fijador único en código de aplicación | Implementado aquí: `tests/higiene-tenant.test.mjs`; mantenimiento por desarrollo | Recorre código de `src`, `tools`, `deploy`, `db` y `tests`; rechaza nuevas llamadas a `set_config`, escrituras directas SET/RESET del tenant y limpieza global del contexto fuera de excepciones explícitas |
 | Consultas parametrizadas y revisión de SQL | `bindNamed` ya existe; revisión obligatoria por desarrollo | Valores hostiles permanecen como parámetros; revisar SQL dinámico en cada endpoint. La higiene textual no detecta todas las construcciones dinámicas ni sustituye revisión |
-| Tenant desde identidad autenticada | **Pendiente APP-01**, desarrollo | JWT verificado (firma, algoritmo permitido, emisor, audiencia, vigencia y pertenencia autorizada); claim `coop` como única fuente. Cuerpo, ruta, query y cabeceras no pueden sustituirlo. Pruebas con dos tokens y manipulación de cada entrada |
-| Detección y registro de cambios inesperados | **Pendiente APP-01**, desarrollo + operación de Christian | Correlacionar petición, usuario, tenant esperado, conexión y transacción; comprobar contexto al entrar/salir del trabajo; ante desvío, abortar, descartar conexión y emitir evento sin tokens, claves ni SQL sensible a un destino fuera de la transacción revertida; probar entrega y alerta |
+| Tenant desde identidad autenticada | **Implementado en APP-01, 22-sep-2026**, pendiente revisión | JWT verificado (HS256 permitido, emisor, audiencia, vigencia y pertenencia autorizada); claim `coop` como única fuente en endpoints protegidos. Cuerpo, ruta, query y cabeceras no lo sustituyen. El login resuelve el código público, nunca recibe el id interno |
+| Detección y registro de cambios inesperados | **Implementado en APP-01, 22-sep-2026**, desarrollo + operación de Christian | Correlaciona petición, usuario, tenant esperado, conexión y transacción; comprueba al entrar/salir, revierte, descarta conexión y emite evento externo sin tokens, claves ni SQL. La prueba fuerza el desvío y verifica rollback, descarte y alerta |
 | Credenciales y acceso directo | **Pendiente confirmación de Christian** | Acceso a `tecnifin_app` sólo del servicio; reportes y soporte sin credenciales compartidas del servicio; probar permisos y gestión de secretos |
 
 La detección en los límites de una consulta/transacción es **parcial**: puede omitir un cambio a B seguido
@@ -283,8 +283,9 @@ migraciones fijar el tenant. Estas excepciones no son caminos de selección de t
   no ataque impedido.** Cuando se endurezca, deberá exigir rechazo y ausencia de efectos cruzados.
 - Siguen vigentes las pruebas de aislamiento normal, ausencia de tenant, permisos, FK y reutilización
   concurrente del pool. `SET LOCAL` limita la duración del contexto; no autentica a quien lo modifica.
-- El cierre documental y las pruebas permiten entregar esta unidad. JWT, detección/alerta y aceptación
-  expresa del riesgo siguen pendientes; no se declara aprobado ADR-0002 ni habilitada producción.
+- APP-01 implementó JWT y detección/alerta el 22-sep-2026. La detección sigue siendo parcial según el límite
+  descrito arriba y la aceptación expresa del riesgo continúa pendiente; no se declara aprobado ADR-0002
+  ni habilitada producción.
 - Christian debe confirmar por acta si acepta el alcance de la opción 1 y los controles pendientes o exige
   la opción 2/3, además de las preguntas abiertas de este ADR. La revisión cruzada de aislamiento no la
   sustituye quien implementó esta unidad.

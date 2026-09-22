@@ -32,7 +32,15 @@ test('fija el tenant con SET LOCAL parametrizado, dentro de la transaccion y ant
   });
   assert.equal(valor, 42);
   assert.deepEqual(f.textos(), [
-    'BEGIN', 'SELECT set_config($1, $2, true)', 'SELECT * FROM tecnifin.socios', 'COMMIT',
+    'BEGIN', 'SELECT set_config($1, $2, true)',
+    `SELECT current_setting($1, true) AS cooperativa_id,
+                pg_backend_pid()::text AS conexion_id,
+                txid_current_if_assigned()::text AS transaccion_id`,
+    'SELECT * FROM tecnifin.socios',
+    `SELECT current_setting($1, true) AS cooperativa_id,
+                pg_backend_pid()::text AS conexion_id,
+                txid_current_if_assigned()::text AS transaccion_id`,
+    'COMMIT',
   ]);
   // El valor viaja como parametro: nunca se interpola en el texto del SQL.
   assert.deepEqual(f.llamadas[1].valores, [CLAVE_TENANT, '42']);
@@ -53,16 +61,45 @@ test('puede usar una transaccion existente sin abrir ni confirmar otra', async (
   const tx = {
     async query(texto, parametros) {
       llamadas.push({ texto, parametros });
+      if (texto.includes('current_setting(@clave, true) AS cooperativa_id')) {
+        return { rows: [{ cooperativa_id: '9', conexion_id: '1', transaccion_id: '2' }] };
+      }
       return { rows: [] };
     },
   };
 
   await withTenant(9, actual => actual.query('SELECT 1'), tx);
   assert.deepEqual(llamadas.map(f => f.texto), [
-    'SELECT set_config(@clave, @valor, true)', 'SELECT 1',
+    'SELECT set_config(@clave, @valor, true)',
+    `SELECT current_setting(@clave, true) AS cooperativa_id,
+                pg_backend_pid()::text AS conexion_id,
+                txid_current_if_assigned()::text AS transaccion_id`,
+    'SELECT 1',
+    `SELECT current_setting(@clave, true) AS cooperativa_id,
+                pg_backend_pid()::text AS conexion_id,
+                txid_current_if_assigned()::text AS transaccion_id`,
   ]);
   assert.deepEqual(llamadas[0].parametros, { clave: CLAVE_TENANT, valor: '9' });
   await assert.rejects(withTenant(9, async () => {}, {}), /transaccionExistente/);
+});
+
+test('aborta, alerta y descarta la conexion si el tenant cambia durante el trabajo', async () => {
+  const f = poolFalso();
+  const alertas = [];
+  const withTenant = crearWithTenant(createDatabase(f.pool), {
+    alertarDesvio: evento => alertas.push(evento),
+  });
+  await assert.rejects(withTenant(4, async () => f.cambiarTenant(5), null, {
+    solicitudId: 'sol-1', usuarioLogin: 'admin',
+  }), error => error.code === 'TECNIFIN_TENANT_CONTEXT_DRIFT');
+  assert.equal(f.textos().at(-1), 'ROLLBACK');
+  assert.equal(f.liberaciones.length, 1);
+  assert.equal(f.liberaciones[0].code, 'TECNIFIN_TENANT_CONTEXT_DRIFT');
+  assert.deepEqual(alertas, [{
+    tipo: 'DESVIO_CONTEXTO_TENANT', fase: 'salida', cooperativaEsperada: 4,
+    cooperativaObservada: '5', solicitudId: 'sol-1', usuarioLogin: 'admin',
+    conexionId: '99', transaccionId: '7',
+  }]);
 });
 
 test('crearWithTenant exige una base con transaction()', () => {

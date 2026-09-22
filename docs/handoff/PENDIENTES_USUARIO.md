@@ -10,7 +10,7 @@
 7. Contratar dominio `tecnifin.com` y hosting (tope USD 150). Hacer `git push` de este repo y de GUTT_SYSTEM.
 
 ## ALTO 1 — decisión provisional tomada, pendiente de aprobación expresa de Christian
-- **Jorge, 22-sep-2026: opción 1**, conservar GUC + controles compensatorios durante desarrollo; higiene implementada, JWT y detección/alerta pendientes de APP-01. [Adenda ADR-0002](../adr/0002-aislamiento-de-datos.md#adenda-22-sep-2026--alto-1-confianza-en-la-fijación-del-tenant).
+- **Jorge, 22-sep-2026: opción 1**, conservar GUC + controles compensatorios durante desarrollo; higiene, JWT y detección/alerta implementados. La detección de entrada/salida no observa un cambio y restauración dentro del mismo SQL. [Adenda ADR-0002](../adr/0002-aislamiento-de-datos.md#adenda-22-sep-2026--alto-1-confianza-en-la-fijación-del-tenant).
 - El rol `tecnifin_app` todavía puede cambiar de tenant con SQL arbitrario: riesgo reproducido, **no corregido**. Christian debe aceptar expresamente por acta el riesgo y la cobertura de controles, o exigir contexto autenticado/credenciales aisladas antes de producción (cláusula 6.3; no se aprueba por silencio). ADR-0002 sigue en propuesta; pruebas verdes no equivalen a aprobación.
 
 ## Christian (revisión expresa, cláusula 6.3; enviar borrador el 2-oct)

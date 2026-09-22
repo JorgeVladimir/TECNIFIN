@@ -164,7 +164,8 @@ con SQL arbitrario; RLS no prueba que el contexto proceda de `withTenant`. `bind
 no autoriza el texto. La [adenda ADR-0002](../adr/0002-aislamiento-de-datos.md#adenda-22-sep-2026--alto-1-confianza-en-la-fijación-del-tenant)
 documenta la opción 1 provisional de Jorge, pendiente de revisión expresa de Christian antes de producción.
 La higiene impide nuevas fijaciones directas en código; sus excepciones SQL/pruebas están enumeradas.
-APP-01 debe implementar JWT, detección y alerta con las limitaciones descritas en la adenda. Los procesos
+APP-01 implementó JWT, detección y alerta; el patrón y sus límites están en
+`03-autenticacion-y-plataforma.md`. Los procesos
 internos de alta/semillas y la demo usan IDs confiables de plataforma: no son autorización para aceptar
 un tenant de una petición. La prueba de caracterización ALTO 1 documenta el riesgo, no su corrección.
 

@@ -80,12 +80,11 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
             count(*) FILTER (WHERE NOT relforcerowsecurity)::int AS sin_force
        FROM pg_class
       WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'`, { dueno });
-  // 40 = las 31 de DAT-01 mas las 9 de DAT-02 (cartera SEPS, solvencia, tarifario de
-  // credito, canal en linea y excepcion de documento). Si cambia, se actualiza el
+  // 41 = las 40 de DAT-01/DAT-02 mas parametros_cooperativa de APP-01. Si cambia, se actualiza el
   // inventario de ADR-0003 a la vez.
-  assert.deepEqual(catalogo.rows[0], { total: 40, ajenas: 0, sin_force: 0 },
+  assert.deepEqual(catalogo.rows[0], { total: 41, ajenas: 0, sin_force: 0 },
     'toda tabla del esquema es del dueno y lleva FORCE, sin excepciones');
-  assert.equal(tablas.length, 38, 'solo cooperativas y parametros_plataforma son de plataforma');
+  assert.equal(tablas.length, 39, 'solo cooperativas y parametros_plataforma son de plataforma');
 
   const rol = await admin.query(
     `SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = @rol`,

@@ -22,6 +22,7 @@ const excepciones = new Map([
   ['db/migrations/0007_contabilidad.sql', 'marca contable historica, sustituida por 0014'],
   ['db/migrations/0014_correcciones_revision_dat01_02.sql', 'trigger de cuadre cambia/restaura tenant de OLD/NEW'],
   ['tests/tenant.test.mjs', 'comprueba el SQL emitido por withTenant'],
+  ['tests/fixtures/pool-falso.mjs', 'simula el contexto que fija withTenant en pruebas unitarias'],
   ['tests/aislamiento.integration.test.mjs', 'sondas adversarias ALTO 1 y cuadre diferido'],
   ['tests/higiene-tenant.test.mjs', 'casos negativos del propio detector'],
 ]);
