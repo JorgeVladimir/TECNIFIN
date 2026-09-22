@@ -13,7 +13,8 @@ const dir = join(REPO_ROOT, 'db/migrations');
 const files = readdirSync(dir).filter(f => /^\d+_.*\.sql$/.test(f))
   .sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b))
   .map(name => {
-    const text = readFileSync(join(dir, name), 'utf8');
+    // Git en Windows convierte LF a CRLF al cambiar de rama; el hash y la ejecucion usan siempre LF.
+    const text = readFileSync(join(dir, name), 'utf8').replaceAll('\r\n', '\n');
     return { name, text, hash: createHash('sha256').update(text, 'utf8').digest('hex') };
   });
 

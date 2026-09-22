@@ -25,3 +25,7 @@ Nada. La siguiente unidad es 2b de `COLA.md` (ALTO 1, decisión de arquitectura)
   Resultado: `var/codex/RESUMEN.md` (y el informe completo en `var/codex/revision-cruzada-dat01-02.md`). Si el equipo se apaga o suspende antes de esa hora, el proceso se pierde: repetirlo a mano.
 - **Retomar con Codex a mano** (abrir Codex en `C:\TECNIFIN` y pegar): `Lee AGENTS.md, docs/handoff/ESTADO.md y docs/handoff/COLA.md. Ejecuta la primera unidad pendiente de la cola siguiendo tu rol de docs/roles/, cierra con npm run verificar y entrega un informe de maximo 25 lineas.`
 - Limites de autonomia de Codex hasta el jueves 24-sep 11:59 (mientras Claude esta en Reserva): puede ejecutar la cola en orden 1, 2 y 3; **se detiene** ante un hallazgo ALTO sin resolver, una suite en rojo, o una PREGUNTA ABIERTA de `PENDIENTES_USUARIO.md` que bloquee la unidad. Trabajo de codigo siempre en ramas `wip/`, sin fusionar en `main` ni hacer `git push`.
+
+## 21-sep
+- Unidad 2a cerrada y fusionada en main (adaab61). Aprendizajes: el sandbox de Codex no escribe en .git (rama y commit los hace codex-delegar); el migrador hashea con LF (git en Windows convierte a CRLF al cambiar de rama; corregido con .gitattributes y normalizacion). Revision con Astra xhigh gasto la ventana de 5 h en 7 min: usar high y partir por areas.
+- Sigue abierta la unidad 2b (ALTO 1: tenant por parametro de sesion) y 3 (APP-01), ambas esperan decision.

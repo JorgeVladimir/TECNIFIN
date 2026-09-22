@@ -1,0 +1,4 @@
+# Los .sql se hashean con SHA-256: siempre LF, en cualquier sistema.
+*.sql text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
