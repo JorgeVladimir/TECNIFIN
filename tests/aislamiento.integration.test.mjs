@@ -26,6 +26,11 @@ let coopA, coopB, datosA, datosB, tablas;
 
 const recorrer = (ejecutor, expresion) => recorrerTablas(ejecutor, tablas, expresion);
 
+const crearAsientoPrueba = async (tx, concepto) => (await tx.query(
+  `INSERT INTO tecnifin.asientos_contables (periodo_contable_id, fecha, concepto, usuario_id, origen_modulo)
+   VALUES (@periodo, DATE '2026-09-21', @concepto, @usuario, 'MANUAL') RETURNING asiento_id`,
+  { periodo: datosA.periodoId, usuario: datosA.usuarioId, concepto })).rows[0].asiento_id;
+
 before(async () => {
   const configuracion = postgresConfig();
   // Misma provision que la base real: dueno, GRANT CONNECT y REVOKE CREATE incluidos.
@@ -92,6 +97,51 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
       WHERE relnamespace = 'tecnifin'::regnamespace AND pg_get_userbyid(relowner) = @rol`,
     { rol: aplicacion });
   assert.equal(propias.rows[0].n, 0, 'la aplicacion no es duena de ningun objeto del esquema');
+});
+
+test('el verificador de invariantes incluye las raices particionadas', async () => {
+  await assert.rejects(
+    admin.transaction(async tx => {
+      await tx.query(
+        `CREATE TABLE tecnifin.sonda_particionada (
+           cooperativa_id integer NOT NULL, id integer NOT NULL
+         ) PARTITION BY RANGE (id)`);
+      const problemas = await tx.query(
+        `SELECT problema FROM tecnifin.verificar_invariantes()
+          WHERE objeto = 'sonda_particionada' ORDER BY problema`);
+      assert.deepEqual(problemas.rows, [
+        { problema: 'RLS sin habilitar, sin FORCE o sin politica' },
+      ]);
+      throw new Error('revertir sonda particionada');
+    }),
+    /revertir sonda particionada/,
+  );
+});
+
+test('todas las columnas de dinero usan el dominio finito', async () => {
+  const tipos = await admin.query(
+    `SELECT count(*) FILTER (WHERE t.typname = 'dinero')::int AS con_dominio,
+            count(*) FILTER (WHERE format_type(a.atttypid, a.atttypmod) = 'numeric(18,2)')::int AS crudas
+       FROM pg_attribute a
+       JOIN pg_class c ON c.oid = a.attrelid
+       JOIN pg_type t ON t.oid = a.atttypid
+      WHERE c.relnamespace = 'tecnifin'::regnamespace AND c.relkind IN ('r', 'p')
+        AND a.attnum > 0 AND NOT a.attisdropped`);
+  assert.ok(tipos.rows[0].con_dominio > 30, 'las columnas monetarias fueron migradas al dominio comun');
+  assert.equal(tipos.rows[0].crudas, 0, 'no queda dinero como numeric(18,2) sin el dominio');
+
+  await assert.rejects(
+    admin.query(`SELECT 'NaN'::tecnifin.dinero`),
+    error => error.code === '23514' && error.constraint === 'ck_dinero_finito',
+    'NaN debe ser rechazado por el dominio de dinero',
+  );
+  for (const valor of ['Infinity', '-Infinity']) {
+    await assert.rejects(
+      admin.query(`SELECT @valor::tecnifin.dinero`, { valor }),
+      error => ['22003', '23514'].includes(error.code),
+      `${valor} debe ser rechazado por el importe con precision acotada`,
+    );
+  }
 });
 
 // (ii) Sin tenant fijado no se ve el universo: se ven cero filas.
@@ -168,14 +218,9 @@ test('una FK compuesta impide colgar un registro del padre de otra cooperativa',
 
 // (vii) Partida doble: la hace cumplir el motor al cerrar la transaccion.
 test('un asiento descuadrado se rechaza al confirmar la transaccion', async () => {
-  const crearAsiento = async (tx, concepto) => (await tx.query(
-    `INSERT INTO tecnifin.asientos_contables (periodo_contable_id, fecha, concepto, usuario_id, origen_modulo)
-     VALUES (@periodo, DATE '2026-09-21', @concepto, @usuario, 'MANUAL') RETURNING asiento_id`,
-    { periodo: datosA.periodoId, usuario: datosA.usuarioId, concepto })).rows[0].asiento_id;
-
   await assert.rejects(
     withTenant(coopA.cooperativa_id, async tx => {
-      const asiento = await crearAsiento(tx, 'Asiento descuadrado');
+      const asiento = await crearAsientoPrueba(tx, 'Asiento descuadrado');
       await tx.query(
         `INSERT INTO tecnifin.detalle_asiento (asiento_id, cuenta_contable_id, tipo_asiento, valor)
          VALUES (@asiento, @debe, 'D', 100.00), (@asiento, @haber, 'H', 90.00)`,
@@ -186,7 +231,7 @@ test('un asiento descuadrado se rechaza al confirmar la transaccion', async () =
   // El diferimiento es lo que permite armar el asiento linea por linea: entre las dos
   // filas el asiento esta descuadrado y aun asi la transaccion sigue viva.
   const cuadrado = await withTenant(coopA.cooperativa_id, async tx => {
-    const asiento = await crearAsiento(tx, 'Asiento cuadrado en dos pasos');
+    const asiento = await crearAsientoPrueba(tx, 'Asiento cuadrado en dos pasos');
     for (const [tipo, cuenta] of [['D', datosA.cuentaCajaId], ['H', datosA.cuentaAhorrosId]]) {
       await tx.query(
         `INSERT INTO tecnifin.detalle_asiento (asiento_id, cuenta_contable_id, tipo_asiento, valor)
@@ -200,6 +245,62 @@ test('un asiento descuadrado se rechaza al confirmar la transaccion', async () =
   const conceptos = await withTenant(coopA.cooperativa_id, tx => tx.query(
     `SELECT count(*)::int AS n FROM tecnifin.asientos_contables WHERE concepto = 'Asiento descuadrado'`));
   assert.equal(conceptos.rows[0].n, 0);
+});
+
+test('el cuadre se recalcula tras cada cambio aunque ya se haya validado', async () => {
+  await assert.rejects(
+    withTenant(coopA.cooperativa_id, async tx => {
+      const asiento = await crearAsientoPrueba(tx, 'Revalidacion de cuadre');
+      await tx.query(
+        `INSERT INTO tecnifin.detalle_asiento (asiento_id, cuenta_contable_id, tipo_asiento, valor)
+         VALUES (@asiento, @debe, 'D', 100.00), (@asiento, @haber, 'H', 100.00)`,
+        { asiento, debe: datosA.cuentaCajaId, haber: datosA.cuentaAhorrosId });
+      await tx.query('SET CONSTRAINTS tg_detalle_asiento_cuadre IMMEDIATE');
+      await tx.query(
+        `UPDATE tecnifin.detalle_asiento SET valor = 90.00
+          WHERE asiento_id = @asiento AND tipo_asiento = 'H'`, { asiento });
+    }),
+    error => error.code === '23514' && /descuadrado/.test(error.message),
+  );
+});
+
+test('cambiar el tenant antes de ejecutar el trigger diferido no elude el cuadre', async () => {
+  await assert.rejects(
+    withTenant(coopA.cooperativa_id, async tx => {
+      const asiento = await crearAsientoPrueba(tx, 'Cuadre con tenant cambiado');
+      await tx.query(
+        `INSERT INTO tecnifin.detalle_asiento (asiento_id, cuenta_contable_id, tipo_asiento, valor)
+         VALUES (@asiento, @debe, 'D', 100.00), (@asiento, @haber, 'H', 90.00)`,
+        { asiento, debe: datosA.cuentaCajaId, haber: datosA.cuentaAhorrosId });
+      await tx.query(`SELECT set_config('app.cooperativa_id', @tenant, true)`,
+        { tenant: String(coopB.cooperativa_id) });
+      await tx.query('SET CONSTRAINTS tg_detalle_asiento_cuadre IMMEDIATE');
+    }),
+    error => error.code === '23514' && /descuadrado/.test(error.message),
+  );
+});
+
+test('una corrida aplicada exige asiento y provision contabilizada coherentes', async () => {
+  for (const caso of [
+    { asiento: null, provision: 100 },
+    { asiento: datosA.asientoId, provision: 0 },
+  ]) {
+    await assert.rejects(
+      withTenant(coopA.cooperativa_id, tx => tx.query(
+        `INSERT INTO tecnifin.reclasificacion_cartera
+           (fecha_corte, estado, usuario_id, asiento_id, provision_contabilizada)
+         VALUES (DATE '2026-10-31', 'APLICADO', @usuario, @asiento, @provision)`,
+        { usuario: datosA.usuarioId, ...caso })),
+      error => error.code === '23514'
+        && error.constraint === 'ck_reclasificacion_cartera_contabilizacion',
+    );
+  }
+
+  await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `INSERT INTO tecnifin.reclasificacion_cartera
+       (fecha_corte, estado, usuario_id, asiento_id, provision_contabilizada)
+     VALUES (DATE '2026-10-31', 'APLICADO', @usuario, @asiento, 100.00)`,
+    { usuario: datosA.usuarioId, asiento: datosA.asientoId }));
 });
 
 // (v) Numeracion por cooperativa desde 1, atomica y sin huecos bajo concurrencia.

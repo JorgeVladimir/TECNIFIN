@@ -74,7 +74,7 @@ export async function migrarBase(entorno) {
 export async function tablasDeNegocio(cliente) {
   const filas = await cliente.query(
     `SELECT relname FROM pg_class
-      WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'
+      WHERE relnamespace = 'tecnifin'::regnamespace AND relkind IN ('r', 'p')
         AND coalesce(obj_description(oid, 'pg_class'), '') NOT LIKE 'plataforma:%'
       ORDER BY relname`);
   return filas.rows.map(f => f.relname);

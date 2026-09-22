@@ -124,25 +124,33 @@ async function sembrarPlanCuentas(tx, catalogo) {
 // ningun INSERT nombra cooperativa_id -- lo pone el DEFAULT que instala aplicar_rls.
 // El orden importa: cuenta_provision es FK contra plan_cuentas, asi que el plan va
 // primero. Idempotente: repetirla no duplica ni pisa lo que la cooperativa ya edito.
-export async function sembrarCatalogos(withTenant, cooperativaId) {
-  await withTenant(cooperativaId, async tx => {
-    for (const catalogo of CATALOGOS) {
-      if (catalogo.tabla === 'plan_cuentas') await sembrarPlanCuentas(tx, catalogo);
-      else await insertarLote(tx, catalogo, leerSemilla(catalogo.semilla));
-    }
-  });
+async function sembrarCatalogosEn(tx) {
+  for (const catalogo of CATALOGOS) {
+    if (catalogo.tabla === 'plan_cuentas') await sembrarPlanCuentas(tx, catalogo);
+    else await insertarLote(tx, catalogo, leerSemilla(catalogo.semilla));
+  }
 }
 
-// Unico camino para dar de alta una cooperativa (regla 13). La fila de cooperativas es
-// una operacion de PLATAFORMA y la hace el dueno del esquema; los catalogos entran
-// despues, ya dentro del tenant, con el rol de la aplicacion.
+export async function sembrarCatalogos(withTenant, cooperativaId) {
+  await withTenant(cooperativaId, sembrarCatalogosEn);
+}
+
+// Unico camino para dar de alta una cooperativa (regla 13). La fila de plataforma y los
+// catalogos se escriben con el dueno en UNA transaccion; FORCE RLS sigue exigiendo que
+// los catalogos entren dentro del tenant fijado por withTenant.
 export async function altaCooperativa(admin, withTenant, datos) {
   const { codigo, razonSocial, ruc, nombreComercial, codigoSeps = null } = datos;
-  const fila = await admin.query(
-    `INSERT INTO tecnifin.cooperativas (codigo, razon_social, ruc, nombre_comercial, codigo_seps)
-     VALUES (@codigo, @razonSocial, @ruc, @nombreComercial, @codigoSeps)
-     RETURNING cooperativa_id, codigo, nombre_comercial`,
-    { codigo, razonSocial, ruc, nombreComercial, codigoSeps });
-  await sembrarCatalogos(withTenant, fila.rows[0].cooperativa_id);
-  return fila.rows[0];
+  if (!admin || typeof admin.transaction !== 'function') {
+    throw new TypeError('altaCooperativa necesita una base admin con transaction()');
+  }
+  return admin.transaction(async tx => {
+    const fila = await tx.query(
+      `INSERT INTO tecnifin.cooperativas (codigo, razon_social, ruc, nombre_comercial, codigo_seps)
+       VALUES (@codigo, @razonSocial, @ruc, @nombreComercial, @codigoSeps)
+       RETURNING cooperativa_id, codigo, nombre_comercial`,
+      { codigo, razonSocial, ruc, nombreComercial, codigoSeps });
+    const cooperativa = fila.rows[0];
+    await withTenant(cooperativa.cooperativa_id, sembrarCatalogosEn, tx);
+    return cooperativa;
+  });
 }

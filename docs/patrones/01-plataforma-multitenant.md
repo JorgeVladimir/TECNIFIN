@@ -72,7 +72,7 @@ FK compuestas y deja el índice agrupado por cooperativa, que es como lo recorre
 | T-SQL | PostgreSQL |
 |---|---|
 | `INT/BIGINT IDENTITY` PK | `integer`/`bigint GENERATED ALWAYS AS IDENTITY` |
-| `DECIMAL(15,2)` · `(18,2)` · `(10,2)` (dinero) | `numeric(18,2)` |
+| `DECIMAL(15,2)` · `(18,2)` · `(10,2)` (dinero) | `tecnifin.dinero` (`numeric(18,2)` finito) |
 | `DECIMAL(5,2)` (tasas, porcentajes) | `numeric(9,4)` |
 | `BIT` | `boolean` (`1/0` **no** es `true/false` implícito en la migración) |
 | `DATETIME2(0)` de un **momento** | `timestamptz(0)` |
@@ -151,6 +151,9 @@ export async function listarSocios(cooperativaId, apellido) {
   parametrizado— y pasa el cliente ya marcado. Al COMMIT o ROLLBACK el valor desaparece y la conexión vuelve
   limpia al pool.
 - Todo lo que hace `fn` está en la misma transacción: si algo falla, no queda un asiento sin su movimiento.
+- Los flujos de plataforma que ya abrieron una transacción pueden entregarla como tercer argumento a
+  `withTenant(cooperativaId, fn, tx)`. Es la excepción usada por `altaCooperativa`: fila de plataforma y
+  catálogos confirman o revierten juntos, sin abrir una transacción anidada.
 - **Nunca usar `db.query` directo** para datos de negocio: no tiene tenant y devuelve cero filas.
 - `crearWithTenant(db)` existe para pruebas y procesos con su propio pool.
 
@@ -237,6 +240,8 @@ No es una convención que haya que recordar: `tools/migrate.mjs` ejecuta `tecnif
 después de **cada** migración y dentro de su transacción, así que una tabla sin `cooperativa_id`, sin RLS,
 sin FORCE, sin política o con una FK sin índice **no llega a existir**. La prueba de aislamiento llama a esa
 misma función, para que el CI lo diga también.
+La misma función revisa raíces particionadas (`relkind = 'p'`) e impide reintroducir columnas monetarias como
+`numeric(18,2)` crudo: todos los importes usan `tecnifin.dinero`, que rechaza `NaN` e infinitos.
 
 Para una tabla de plataforma (que no pertenece a ninguna cooperativa) se usa
 `tecnifin.aplicar_rls_plataforma('tecnifin.<tabla>', '<expresión de lectura>')`, que además deja el

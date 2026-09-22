@@ -87,7 +87,7 @@ test('regla 11: las semillas son catalogo publico, sin entidades ni personas', (
 
   // Nombres de instituciones concretas: una cuenta del catalogo nacional nunca los lleva.
   const instituciones = new RegExp(['pichi' + 'ncha', 'guaya' + 'quil', 'coodesa' + 'rrollo',
-    'fec' + 'oac', 'nueva gene' + 'racion'].join('|'), 'i');
+    'fec' + 'oac', 'nueva gene' + 'racion', 'pro' + 'credit', 'boliva' + 'riano'].join('|'), 'i');
   for (const nombre of semillas) {
     const texto = readFileSync(join(dir, nombre), 'utf8');
     assert.doesNotMatch(texto, instituciones, `la semilla ${nombre} nombra a una entidad concreta`);

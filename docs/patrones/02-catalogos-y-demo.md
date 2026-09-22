@@ -92,9 +92,11 @@ const coop = await altaCooperativa(admin, withTenant, {
 
 - La fila de `cooperativas` es una operación de **plataforma**: la escribe `tecnifin_admin` (la aplicación no
   tiene `INSERT` sobre esa tabla).
-- Los seis catálogos entran **dentro del tenant**, por `withTenant`, con el rol de la aplicación. Ningún
-  `INSERT` nombra `cooperativa_id`.
+- La fila y los seis catálogos se escriben en **una sola transacción** de `tecnifin_admin`; los catálogos
+  entran dentro del tenant mediante `withTenant(..., tx)` y `FORCE RLS` sigue aplicando. Ningún `INSERT`
+  nombra `cooperativa_id`.
 - **Es idempotente** (`ON CONFLICT DO NOTHING`): repetirla no duplica ni pisa lo que la cooperativa ya editó.
+- Si una semilla falla, la fila de `cooperativas` también revierte: el mismo código/RUC se puede reintentar.
 - La fábrica de pruebas (`tests/fixtures/cooperativas.mjs`) usa **esta misma función**. Si hubiera dos altas
   —una real y otra "de prueba"— divergirían, y la prueba de aislamiento dejaría de probar el camino real.
 

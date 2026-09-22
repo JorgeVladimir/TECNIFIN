@@ -26,10 +26,14 @@ export function crearWithTenant(db) {
   }
   // async a proposito: un tenant invalido vuelve como promesa rechazada, no como
   // excepcion sincrona que se escaparia de un .catch() del llamador.
-  return async function withTenant(cooperativaId, fn) {
+  return async function withTenant(cooperativaId, fn, transaccionExistente = null) {
     const cooperativa = validarCooperativaId(cooperativaId);
     if (typeof fn !== 'function') throw new TypeError('withTenant necesita una funcion de trabajo');
-    return db.transaction(async tx => {
+    if (transaccionExistente !== null
+      && (!transaccionExistente || typeof transaccionExistente.query !== 'function')) {
+      throw new TypeError('transaccionExistente debe exponer query()');
+    }
+    const ejecutar = async tx => {
       // set_config(clave, valor, true) es SET LOCAL parametrizado: acotado a esta
       // transaccion y sin interpolar nada en el SQL. Al COMMIT o ROLLBACK el valor
       // desaparece y la conexion vuelve limpia al pool. Un SET sin LOCAL dejaria el
@@ -38,7 +42,12 @@ export function crearWithTenant(db) {
         clave: CLAVE_TENANT, valor: String(cooperativa),
       });
       return fn(tx, cooperativa);
-    });
+    };
+    // Las operaciones de plataforma que tambien escriben datos del tenant (por ejemplo,
+    // el alta atomica de una cooperativa) entregan su transaccion ya abierta. Asi la fila
+    // de plataforma y sus datos de negocio confirman o revierten como una sola unidad.
+    if (transaccionExistente) return ejecutar(transaccionExistente);
+    return db.transaction(ejecutar);
   };
 }
 

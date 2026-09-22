@@ -1,7 +1,7 @@
 # Estado del proyecto (se actualiza al cerrar cada unidad de trabajo)
 
 **Modo:** RESERVA — Claude Code ha llegado al ~90 % del limite semanal (88 % semanal / 89 % de sesion a las 20:53; reinicia el jueves 24-sep 11:59). Codex continua solo; Claude solo orquesta con el minimo de tokens.
-**Actualizado:** 2026-09-20 21:00 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Hito H1:** modelo de BD multi-tenant, acta el 30-oct-2026.
+**Actualizado:** 2026-09-21 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Hito H1:** modelo de BD multi-tenant, acta el 30-oct-2026.
 
 ## Hecho (último commit verde: `97adaef`, 44 pruebas, 13 migraciones)
 - Fase 0: proyecto, reglas 1-14, pruebas de higiene, CI verde en GitHub (ejecución #1 sobre `953ee54`).
@@ -9,9 +9,10 @@
 - DAT-02: cartera SEPS, solvencia, tasas de crédito, banca en línea; semillas del Catálogo Único (994 cuentas, por cooperativa); base `tecnifin_demo`. 40 tablas, 42 políticas.
 - Borradores ADR-0001/0002/0003 y ARQ-01 (estado «propuesta»).
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
+- Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 
 ## En curso
-Nada. La siguiente unidad es la primera de `COLA.md`.
+Nada. La siguiente unidad es 2b de `COLA.md` (ALTO 1, decisión de arquitectura).
 
 ## Riesgos vivos
 - ADR-0001/0002/0003 sin revisar por Christian (ADR-0002 no se aprueba por silencio).

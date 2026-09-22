@@ -112,6 +112,39 @@ test('dar de alta dos cooperativas siembra a cada una SU plan, y editar uno no t
   assert.equal(Number(await solvencia(beta)), 0.12);
 });
 
+test('si la siembra falla a mitad, el alta completa revierte y se puede reintentar', async () => {
+  const datos = {
+    codigo: 'SEMI-REINTENTO', razonSocial: 'Cooperativa de Prueba de Reintento',
+    ruc: '1800000000033', nombreComercial: 'Reintento',
+  };
+  let consultasDeSiembra = 0;
+  const withTenantQueFalla = (cooperativaId, trabajo, tx) => withTenant(
+    cooperativaId,
+    tenantTx => trabajo({
+      query(texto, parametros) {
+        consultasDeSiembra++;
+        if (consultasDeSiembra === 3) throw new Error('fallo de siembra provocado');
+        return tenantTx.query(texto, parametros);
+      },
+    }),
+    tx,
+  );
+
+  await assert.rejects(
+    altaCooperativa(admin, withTenantQueFalla, datos),
+    /fallo de siembra provocado/,
+  );
+  const despuesDelFallo = await admin.query(
+    `SELECT count(*)::int AS n FROM tecnifin.cooperativas WHERE codigo = @codigo`,
+    { codigo: datos.codigo });
+  assert.equal(despuesDelFallo.rows[0].n, 0, 'el fallo no deja una cooperativa incompleta');
+
+  const cooperativa = await altaCooperativa(admin, withTenant, datos);
+  const totalPlan = await withTenant(cooperativa.cooperativa_id, async tx => (await tx.query(
+    `SELECT count(*)::int AS n FROM tecnifin.plan_cuentas`)).rows[0].n);
+  assert.equal(totalPlan, leerSemilla('plan_cuentas_seps').length, 'el reintento siembra el catalogo completo');
+});
+
 test('las bandas de antiguedad se leen del plan de cuentas, no del codigo', async () => {
   const coop = (await admin.query(`SELECT cooperativa_id FROM tecnifin.cooperativas WHERE codigo = 'SEMI-B'`)).rows[0];
   // Mismo criterio que el motor de cartera del sistema anterior: las subcuentas de seis

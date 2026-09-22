@@ -83,12 +83,12 @@ Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero creden
 Fase 0 (creación del proyecto) en curso. Primer hito: **H1**, modelo de base multi-tenant en PostgreSQL,
 aceptado por acta el **30-oct-2026**.
 
-**DAT-01 y DAT-02 construidos** (borrador, pendiente de acta): 13 migraciones en `db/migrations/`,
+**DAT-01 y DAT-02 construidos** (borrador, pendiente de acta): 14 migraciones en `db/migrations/`,
 **40 tablas** (38 de negocio + 2 de plataforma) con `FORCE ROW LEVEL SECURITY` sin excepciones, **42 políticas
-RLS** y 4 dominios que guardan las reglas que antes eran listas copiadas (código contable, segmento,
-calificación, hash de secretos), `withTenant()` en `src/platform/tenant.js`, alta y siembra de cooperativas en
+RLS** y 5 dominios que guardan reglas comunes (código contable, segmento, calificación, hash de secretos y
+dinero finito), `withTenant()` en `src/platform/tenant.js`, alta y siembra atómicas de cooperativas en
 `src/platform/semillas.js`, semillas del Catálogo Único SEPS en `db/seeds/` y base de demostración
-reproducible. `npm test`: **44 pruebas en verde**.
+reproducible. `npm test`: **51 pruebas en verde**.
 
 Los dos patrones de traducción se leen antes de portar cualquier módulo y no se re-derivan:
 **`docs/patrones/01-plataforma-multitenant.md`** (mapeo de nombres, consulta antes/después, `withTenant`,

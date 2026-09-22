@@ -45,6 +45,26 @@ test('si el trabajo falla, la transaccion se revierte y el tenant no sobrevive',
   assert.equal(f.textos().at(-1), 'ROLLBACK');
 });
 
+test('puede usar una transaccion existente sin abrir ni confirmar otra', async () => {
+  const llamadas = [];
+  const withTenant = crearWithTenant({
+    transaction() { throw new Error('no debe abrir otra transaccion'); },
+  });
+  const tx = {
+    async query(texto, parametros) {
+      llamadas.push({ texto, parametros });
+      return { rows: [] };
+    },
+  };
+
+  await withTenant(9, actual => actual.query('SELECT 1'), tx);
+  assert.deepEqual(llamadas.map(f => f.texto), [
+    'SELECT set_config(@clave, @valor, true)', 'SELECT 1',
+  ]);
+  assert.deepEqual(llamadas[0].parametros, { clave: CLAVE_TENANT, valor: '9' });
+  await assert.rejects(withTenant(9, async () => {}, {}), /transaccionExistente/);
+});
+
 test('crearWithTenant exige una base con transaction()', () => {
   for (const malo of [null, {}, { query: () => {} }]) assert.throws(() => crearWithTenant(malo), TypeError);
 });

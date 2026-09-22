@@ -1,0 +1,6 @@
+- ALTO 2: recalcular siempre la partida doble diferida y validar el tenant de cada línea.
+- ALTO 3: introducir `tecnifin.dinero` y rechazar NaN e infinitos en todos los importes.
+- MEDIO 4: restaurar los nombres genéricos SEPS de 260305/260310/260320 y blindar higiene.
+- MEDIO 5: incluir raíces particionadas en `verificar_invariantes()` y en el inventario de pruebas.
+- MEDIO 6: exigir asiento e importe positivo coherentes en corridas de cartera APLICADO.
+- MEDIO 7: hacer atómica el alta y la siembra, con rollback y reintento probado.

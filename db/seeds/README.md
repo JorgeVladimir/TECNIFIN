@@ -20,8 +20,9 @@ La base de TECNIFIN **nace en blanco** (regla 11). Estas semillas son lo único 
 ## Cómo se usan
 
 `src/platform/semillas.js`. `altaCooperativa(admin, withTenant, datos)` crea la fila de plataforma y siembra
-los seis catálogos dentro del tenant. Es **idempotente**: repetirla no duplica ni pisa lo que la cooperativa
-ya editó (`ON CONFLICT DO NOTHING`).
+los seis catálogos dentro del tenant, todo en una transacción: un fallo revierte también el alta y permite
+reintentar. Es **idempotente**: repetir la siembra no duplica ni pisa lo que la cooperativa ya editó
+(`ON CONFLICT DO NOTHING`).
 
 ## Cómo se obtuvieron, y qué se dejó fuera a propósito
 
