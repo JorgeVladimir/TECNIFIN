@@ -31,7 +31,8 @@ el mecanismo nativo correcto — ver "Decisión", punto 4.
 
 Requisitos que cualquier opción debe cumplir:
 
-- R1. El motor, no la aplicación, impide leer o escribir filas de otro tenant.
+- R1. El motor impide leer o escribir filas ajenas al tenant fijado por una aplicación confiable.
+  **No impide que SQL arbitrario cambie ese tenant:** limitación ALTO 1, tratada en la adenda del 22-sep.
 - R2. Una consulta mal escrita falla cerrada (0 filas), no abierta.
 - R3. Una migración se aplica a las 10 cooperativas de una sola vez y de forma verificable (regla 3).
 - R4. Restaurar los datos de **una** cooperativa a una fecha anterior sin tocar a las otras nueve.
@@ -47,7 +48,7 @@ y una política RLS que compara esa columna contra `current_setting('app.coopera
 
 | Dimensión | Evaluación |
 |---|---|
-| R1 aislamiento | **Fuerte**, si y solo si se cumplen tres condiciones no negociables: `FORCE ROW LEVEL SECURITY` en cada tabla (el **dueño de la tabla ignora RLS** por defecto — es la trampa clásica); el rol de la aplicación **sin** `BYPASSRLS` y sin ser dueño; y ninguna función de negocio `SECURITY DEFINER` |
+| R1 aislamiento | Protege frente a consultas que omiten el filtro, con `FORCE RLS`, rol sin `BYPASSRLS` ni propiedad y sin funciones de negocio `SECURITY DEFINER`. **Además depende de la aplicación que fija el contexto: no resiste SQL arbitrario bajo ese rol** (adenda ALTO 1) |
 | R2 falla cerrada | **Sí**, si la política se escribe de modo que un GUC ausente no calce ninguna fila |
 | R3 migraciones | **Mejor de las tres.** Un `ALTER TABLE` toca a las 10 cooperativas a la vez. `migrate.mjs` con SHA-256 sigue sirviendo sin cambios |
 | R4 restauración por cooperativa | **Punto débil.** Un `pg_restore` de la base entera devuelve a las 10 cooperativas al pasado. Requiere procedimiento aparte (ver Consecuencias) |
@@ -83,7 +84,7 @@ y una política RLS que compara esa columna contra `current_setting('app.coopera
 
 | | A: RLS | B: esquema/coop | C: base/coop |
 |---|:--:|:--:|:--:|
-| Aislamiento garantizado por el motor | sí | sí | sí |
+| Aislamiento garantizado por el motor | respecto al GUC, no frente a su manipulación | depende de permisos por esquema | depende de credenciales por base |
 | Migraciones de una sola pasada | **sí** | no | no |
 | Restaurar una cooperativa sola | **no, requiere procedimiento** | sí | sí |
 | Costo operativo con 10 tenants | bajo | medio | alto |
@@ -157,14 +158,15 @@ contrato — hoy ninguno lo exige (Pregunta abierta 3).
 | 3 | **Escritura cruzada**: `withTenant(A)` intenta insertar con `cooperativa_id` de B | Rechazado por el `WITH CHECK` de la política |
 | 4 | **Padre cruzado** (el bug de `11`, sección 6): crear un crédito de la coop A cuyo socio es de la B | Rechazado por la FK compuesta. Es el mismo caso que el script viejo probaba; aquí debe fallar en el motor |
 | 5 | **Sin tenant**: consulta sobre tabla de negocio sin `withTenant` | 0 filas |
-| 6 | **Rol**: `tecnifin_app` intenta `ALTER TABLE`, `SET ROLE tecnifin_admin` y `SET app.cooperativa_id` fuera de `withTenant` | Las tres rechazadas o sin efecto sobre el aislamiento |
+| 6 | **Rol**: `tecnifin_app` intenta DDL, `SET ROLE tecnifin_admin` y cambiar el GUC | DDL y escalamiento rechazados. El cambio de GUC **sí permite acceso cruzado**; se conserva una prueba de caracterización del riesgo, no se declara corregido (adenda ALTO 1) |
 | 7 | **Fuga por pool**: 200 transacciones alternando tenant A/B en concurrencia sobre el mismo pool | Ninguna ve el tenant de la otra |
 | 8 | **Partida doble por tenant**: sumar debe y haber de `detalle_asiento` bajo cada tenant | Cuadra dentro de cada cooperativa, y la suma de ambas no se mezcla |
 | 9 | **Rendimiento**: consultas de saldo, mayor y cartera con 2 cooperativas cargadas | Los planes usan los índices con `cooperativa_id` al frente; se registra el tiempo como línea base para la Fase 5 |
 
-Criterio de aceptación de H1 para este ADR: pruebas 1-8 en verde en CI; la 9 con números registrados en
-ARQ-01; y el runbook de restauración por cooperativa (punto 5) **con fecha comprometida**, aunque su ensayo
-sea posterior a H1.
+Criterio de aceptación de H1 para este ADR: pruebas 1-8 en verde en CI, con la excepción de seguridad de la
+prueba 6 **aceptada expresamente por Christian en acta o corregida**; controles pendientes de la adenda
+verificados; la 9 con números registrados en ARQ-01; y el runbook de restauración por cooperativa (punto 5)
+**con fecha comprometida**, aunque su ensayo sea posterior a H1. Una suite verde no acepta el riesgo.
 
 ## Preguntas abiertas
 
@@ -185,6 +187,107 @@ sea posterior a H1.
   tenants: si se necesita separación criptográfica por cooperativa, eso sí reabre la opción C.
 - **PREGUNTA ABIERTA 5 (Christian) — quién puede conectarse a la base.** ¿Hay acceso directo (psql, herramienta
   de reportes) al servidor productivo, y con qué rol? Un rol de lectura sin RLS forzado anula todo este ADR.
+
+## Adenda 22-sep-2026 — ALTO 1: confianza en la fijación del tenant
+
+**Estado: propuesta. Decisión provisional tomada por Jorge el 22-sep-2026**, según el
+[encargo ALTO 1](../handoff/encargos/alto1-fijacion-tenant.md): opción 1, conservar el mecanismo actual
+con controles compensatorios y riesgo residual explícito mientras se construye APP-01.
+**Falta la revisión y aprobación expresa de Christian antes de producción (cláusula 6.3);
+no se aprueba por silencio.** Esta adenda no llena el acta ni cierra técnicamente el ALTO 1.
+
+### Hallazgo y límite de confianza
+
+`tecnifin_app` puede cambiar `app.cooperativa_id` dentro de la misma transacción y leer/actualizar usuarios
+de B después de entrar por `withTenant(A)`. La política sigue aplicándose, pero a un contexto elegido por
+el atacante. No hace falta controlar todo Node: basta una vía de ejecución de SQL arbitrario con ese rol.
+No se ha demostrado una inyección HTTP; todavía no existe la capa de autenticación APP-01.
+
+`bindNamed` mantiene los **valores** fuera del texto SQL; no valida ni autoriza ese texto, ni rechaza SQL
+arbitrario bien formado. Las pruebas actuales de parámetros y SQL incompleto no prueban lo contrario.
+Se exige SQL escrito por el desarrollador y valores enlazados; identificadores u ordenaciones variables
+requieren listas permitidas. Nunca concatenar entrada de la petición al SQL.
+
+PostgreSQL acepta parámetros personalizados de dos componentes. El privilegio `SET ON PARAMETER` sirve
+para conceder cambios de parámetros restringidos; revocarlo no convierte este GUC ordinario en uno
+protegido. Véanse [opciones personalizadas](https://www.postgresql.org/docs/18/runtime-config-custom.html)
+y [privilegios de parámetros](https://www.postgresql.org/docs/18/ddl-priv.html).
+
+### Opciones evaluadas
+
+| Opción | Ventaja y costo | Decisión provisional |
+|---|---|---|
+| 1. GUC + controles compensatorios | Conserva pool, roles y migraciones; complejidad baja. RLS protege contra filtros olvidados, pero SQL arbitrario permite acceso cruzado | Elegida para continuar desarrollo; requiere completar controles y aceptación expresa del riesgo antes de producción |
+| 2. Contexto autenticado verificado por la base | Puede resistir falsificación desde SQL; exige autenticación, gestión de claves/sesiones y cambios de RLS. Complejidad alta | Diseñar junto con APP-01 si Christian exige impedir el cambio desde SQL; no introducir un verificador incompleto aquí |
+| 3. Login y pool por tenant, sin permisos sobre otros tenants | La identidad de conexión puede ser una frontera independiente del GUC | Viable, pero multiplica credenciales, rotación y pools; cambia el contrato operativo. No elegida ahora |
+| 4. Esquema/base por tenant con permisos separados | Reduce el alcance de una credencial comprometida | Mayor costo de migraciones, conexiones y recuperación; reabrir si se exige aislamiento de credenciales/infraestructura |
+| 5. Más políticas sobre el mismo GUC, límites de conexión o revocar SET | Los límites ayudan a disponibilidad; otra política puede reforzar reglas de negocio | No autentican el tenant; no corrigen ALTO 1. No se presentan como solución |
+
+**Viabilidad de la opción 2.** Una función `SECURITY DEFINER` que sólo comprueba una firma y luego fija el
+mismo GUC es eludible: el rol sigue pudiendo hacer `SET` después. RLS debe consumir un contexto autenticado
+completo o consultar un registro protegido, nunca confiar sólo en un entero modificable.
+
+Un HMAC necesita la misma clave para generar y verificar; «HMAC con una clave que la base nunca ve» no
+permite verificación local. Una clave compartida guardada fuera del alcance de `tecnifin_app` es viable;
+para que la base no tenga la clave privada hace falta firma asimétrica y un verificador adecuado.
+La documentación de [HMAC en pgcrypto](https://www.postgresql.org/docs/18/pgcrypto.html) define la clave
+como entrada de la operación; no se ha seleccionado ni instalado un verificador de JWT en PostgreSQL.
+
+Otra alternativa es una sesión opaca emitida tras autenticar credenciales y comprobar pertenencia al tenant,
+guardada en una tabla inaccesible al rol de aplicación. Una función que acepte únicamente un tenant solicitado
+y emita una sesión para él no autentica nada. Deben definirse caducidad, revocación, rotación, vinculación a
+usuario/tenant y defensa frente a reutilización de tokens, sin exponerlos en logs o consultas de otras sesiones.
+Eso depende del diseño de APP-01 y de las preguntas abiertas de autenticación; no se decide aquí.
+
+Si se usa `SECURITY DEFINER`, deberá pertenecer a `tecnifin_admin`, tener `search_path` seguro, nombres
+cualificados y `EXECUTE` revocado a `PUBLIC`, con privilegios mínimos y prueba adversaria. Son requisitos
+de implementación, no una aprobación anticipada; véase [seguridad de funciones](https://www.postgresql.org/docs/18/sql-createfunction.html).
+También habrá que adaptar el trigger de cuadre de 0014, que hoy cambia/restaura temporalmente el tenant.
+
+**Límite de la opción 3.** Un rol común con permiso para `SET ROLE` a todos los tenants conserva la capacidad
+de cambiar de identidad. Se necesitan logins aislados y políticas basadas en identidad no falsificable por
+esa conexión, sin pertenencias cruzadas. [SET ROLE](https://www.postgresql.org/docs/18/sql-set-role.html)
+depende de los permisos de pertenencia; cambiar sólo el nombre del rol no crea una frontera.
+Un compromiso completo del proceso que custodia todas las credenciales o la clave de firma sigue fuera
+de la protección de estas opciones; requeriría separar procesos y credenciales.
+
+### Controles, responsables y evidencia exigida
+
+| Control | Estado y responsable | Evidencia para aceptar |
+|---|---|---|
+| Fijador único en código de aplicación | Implementado aquí: `tests/higiene-tenant.test.mjs`; mantenimiento por desarrollo | Recorre código de `src`, `tools`, `deploy`, `db` y `tests`; rechaza nuevas llamadas a `set_config`, escrituras directas SET/RESET del tenant y limpieza global del contexto fuera de excepciones explícitas |
+| Consultas parametrizadas y revisión de SQL | `bindNamed` ya existe; revisión obligatoria por desarrollo | Valores hostiles permanecen como parámetros; revisar SQL dinámico en cada endpoint. La higiene textual no detecta todas las construcciones dinámicas ni sustituye revisión |
+| Tenant desde identidad autenticada | **Pendiente APP-01**, desarrollo | JWT verificado (firma, algoritmo permitido, emisor, audiencia, vigencia y pertenencia autorizada); claim `coop` como única fuente. Cuerpo, ruta, query y cabeceras no pueden sustituirlo. Pruebas con dos tokens y manipulación de cada entrada |
+| Detección y registro de cambios inesperados | **Pendiente APP-01**, desarrollo + operación de Christian | Correlacionar petición, usuario, tenant esperado, conexión y transacción; comprobar contexto al entrar/salir del trabajo; ante desvío, abortar, descartar conexión y emitir evento sin tokens, claves ni SQL sensible a un destino fuera de la transacción revertida; probar entrega y alerta |
+| Credenciales y acceso directo | **Pendiente confirmación de Christian** | Acceso a `tecnifin_app` sólo del servicio; reportes y soporte sin credenciales compartidas del servicio; probar permisos y gestión de secretos |
+
+La detección en los límites de una consulta/transacción es **parcial**: puede omitir un cambio a B seguido
+de restauración a A dentro del SQL ejecutado. Registrar sólo las llamadas a `withTenant` tampoco observa
+las demás vías. No hay una alerta completa implementada hoy; su cobertura y limitaciones deben quedar
+ensayadas y aceptadas. Si Christian exige prevención frente a SQL arbitrario, la opción 1 es insuficiente
+y se reabre la opción 2 o 3 antes de producción.
+
+Excepciones de higiene cerradas: `tenant.js` es el fijador; `tests/tenant.test.mjs` comprueba su SQL;
+`tests/aislamiento.integration.test.mjs` contiene ataques de caracterización y la regresión del cuadre;
+la prueba de higiene contiene sus propios ejemplos. `0007_contabilidad.sql` conserva una marca histórica
+reemplazada por 0014; `0014_correcciones_revision_dat01_02.sql` cambia/restaura el contexto desde `OLD/NEW`
+para validar el cuadre diferido. No se reescriben migraciones aplicadas ni se permite por defecto a futuras
+migraciones fijar el tenant. Estas excepciones no son caminos de selección de tenant para endpoints.
+
+### Consecuencias y pruebas de esta unidad
+
+- Sin cambios de esquema ni de API de `withTenant`: no corresponde migración 0015. Se agregan controles
+  de higiene y una prueba de caracterización sobre la base efímera con datos sintéticos.
+- La prueba ALTO 1 entra por A con el rol real de aplicación, cambia a B, demuestra lectura y escritura,
+  fuerza `ROLLBACK` y verifica que B conserva su valor original. **Verde significa riesgo reproducible,
+  no ataque impedido.** Cuando se endurezca, deberá exigir rechazo y ausencia de efectos cruzados.
+- Siguen vigentes las pruebas de aislamiento normal, ausencia de tenant, permisos, FK y reutilización
+  concurrente del pool. `SET LOCAL` limita la duración del contexto; no autentica a quien lo modifica.
+- El cierre documental y las pruebas permiten entregar esta unidad. JWT, detección/alerta y aceptación
+  expresa del riesgo siguen pendientes; no se declara aprobado ADR-0002 ni habilitada producción.
+- Christian debe confirmar por acta si acepta el alcance de la opción 1 y los controles pendientes o exige
+  la opción 2/3, además de las preguntas abiertas de este ADR. La revisión cruzada de aislamiento no la
+  sustituye quien implementó esta unidad.
 
 ## Aprobaciones
 

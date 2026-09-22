@@ -364,6 +364,31 @@ test('transacciones A y B concurrentes sobre el mismo pool no se contaminan', as
   assert.equal(app.stats().total - app.stats().idle, 0, 'quedaron conexiones tomadas');
 });
 
+// Caracterizacion del riesgo ACEPTADO SOLO PROVISIONALMENTE (ADR-0002, ALTO 1).
+// Verde significa que el riesgo sigue reproducible; NO certifica resistencia a SQL arbitrario.
+test('ALTO 1 residual: SQL arbitrario bajo tecnifin_app puede leer y escribir otro tenant', async () => {
+  const revertir = new Error('revertir sonda ALTO 1');
+  const leer = tx => tx.query('SELECT cooperativa_id, nombre_completo FROM tecnifin.usuarios WHERE usuario_id = @id',
+    { id: datosB.usuarioId });
+  const original = await withTenant(coopB.cooperativa_id, leer);
+  assert.equal(original.rows.length, 1);
+  await assert.rejects(withTenant(coopA.cooperativa_id, async tx => {
+    const inicial = await tx.query('SELECT DISTINCT cooperativa_id FROM tecnifin.usuarios');
+    assert.deepEqual(inicial.rows, [{ cooperativa_id: coopA.cooperativa_id }]);
+    // Pasa por bindNamed: parametrizar valores no autoriza el texto SQL.
+    await tx.query("SELECT set_config('app.cooperativa_id', @tenant, true)",
+      { tenant: String(coopB.cooperativa_id) });
+    assert.deepEqual((await leer(tx)).rows, original.rows);
+    const escritura = await tx.query(
+      `UPDATE tecnifin.usuarios SET nombre_completo = 'Sonda ALTO 1'
+        WHERE usuario_id = @id RETURNING cooperativa_id, nombre_completo`, { id: datosB.usuarioId });
+    assert.deepEqual(escritura.rows, [{ cooperativa_id: coopB.cooperativa_id, nombre_completo: 'Sonda ALTO 1' }]);
+    throw revertir;
+  }), error => error === revertir);
+  assert.deepEqual((await withTenant(coopB.cooperativa_id, leer)).rows, original.rows,
+    'la sonda debe revertir toda escritura');
+});
+
 test('el rol de la aplicacion no hace DDL y la auditoria es append-only', async () => {
   for (const sentencia of ['ALTER TABLE tecnifin.socios ADD COLUMN colado integer',
     'CREATE TABLE tecnifin.colada (id integer)', 'SET ROLE tecnifin_admin']) {

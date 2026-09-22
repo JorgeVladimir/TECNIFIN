@@ -9,8 +9,9 @@
 6. Contrato v3: cláusula 10.5 (pagos a Christian) y Fase 3 (ya no es «migración de datos reales»; requiere acta).
 7. Contratar dominio `tecnifin.com` y hosting (tope USD 150). Hacer `git push` de este repo y de GUTT_SYSTEM.
 
-## Hallazgo ALTO de la revisión cruzada que exige decisión de diseño (Jorge + Christian)
-- **El tenant se fija con un parámetro de sesión (`app.cooperativa_id`) que el propio rol `tecnifin_app` puede cambiar** con `SET`. Quien logre ejecutar SQL con esa conexión (p. ej. por una inyección) puede cambiar de cooperativa y leer o modificar filas de otra. Reproducido por Codex (informe, ALTO 1). Corregirlo cambia ADR-0002 (p. ej. fijar el tenant con una firma que el SQL inyectado no pueda falsificar). **No se corrige sin decisión.**
+## ALTO 1 — decisión provisional tomada, pendiente de aprobación expresa de Christian
+- **Jorge, 22-sep-2026: opción 1**, conservar GUC + controles compensatorios durante desarrollo; higiene implementada, JWT y detección/alerta pendientes de APP-01. [Adenda ADR-0002](../adr/0002-aislamiento-de-datos.md#adenda-22-sep-2026--alto-1-confianza-en-la-fijación-del-tenant).
+- El rol `tecnifin_app` todavía puede cambiar de tenant con SQL arbitrario: riesgo reproducido, **no corregido**. Christian debe aceptar expresamente por acta el riesgo y la cobertura de controles, o exigir contexto autenticado/credenciales aisladas antes de producción (cláusula 6.3; no se aprueba por silencio). ADR-0002 sigue en propuesta; pruebas verdes no equivalen a aprobación.
 
 ## Christian (revisión expresa, cláusula 6.3; enviar borrador el 2-oct)
 1. RPO/RTO y restauración de una cooperativa sin afectar a las otras. **Bloquea ADR-0002.**
