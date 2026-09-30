@@ -20,6 +20,7 @@ import {
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { aTexto, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA } from '../creditos/calculo.js';
+import { cajaAbierta, efectivoValido, mismoValor, montoValido, totalEfectivo } from '../caja/servicio.js';
 
 const ROLES_CONSULTA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
 const ROLES_APLICA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
@@ -371,12 +372,92 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
         ] });
       await tx.query(`UPDATE tecnifin.tabla_amortizacion SET estado = 'CASTIGADA' WHERE amortizacion_id = ANY(@ids::bigint[])`,
         { ids: cuotas.map(q => q.amortizacion_id) });
-      await tx.query(`UPDATE tecnifin.creditos SET estado = 'CASTIGADO' WHERE credito_id = @id`, { id: cr.credito_id });
+      await tx.query(`UPDATE tecnifin.creditos SET estado = 'CASTIGADO', monto_castigado = @m::numeric WHERE credito_id = @id`,
+        { id: cr.credito_id, m: total });
       await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'CASTIGAR', entidadTipo: 'CREDITO', entidadId: c,
         campo: 'estado', anterior: 'VIGENTE', nuevo: 'CASTIGADO', detalle: `${razon.slice(0, 400)} Saldo ${total}.` });
       return { credito: c, estado: 'CASTIGADO', saldoCastigado: total, asiento: Number(asiento) };
     });
   }
 
-  return { consultar, procesar, reversar, castigar };
+  // Recuperacion de un credito castigado: lo cobrado va a ingreso (560405 De activos castigados)
+  // y baja el control de orden en el mismo monto. Nunca mas de lo castigado pendiente.
+  const ROLES_COBRO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
+  async function recuperar(token, codigo, { monto, origen = 'CAJA', numeroCuenta, efectivo } = {}, contexto = {}) {
+    const c = String(codigo || '').toUpperCase();
+    if (!/^CRED-[0-9]{6,12}$/.test(c)) throw new ErrorSolicitud('Codigo de credito invalido');
+    const m = montoValido(monto);
+    const via = String(origen).toUpperCase();
+    if (!['CAJA', 'CUENTA'].includes(via)) throw new ErrorSolicitud('origen debe ser CAJA o CUENTA');
+    const detalle = via === 'CAJA' ? efectivoValido(efectivo) : null;
+    return conRoles(token, contexto, ROLES_COBRO, 'RECUPERACION_CASTIGO', async (tx, actor) => {
+      const cr = (await tx.query(
+        `SELECT credito_id, estado, segmento, socio_id, @m::numeric <= monto_castigado - monto_recuperado AS cabe,
+                (monto_castigado - monto_recuperado)::text AS pendiente
+           FROM tecnifin.creditos WHERE codigo = @c FOR UPDATE`, { c, m })).rows[0];
+      if (!cr) return { error: new ErrorNoEncontrado() };
+      if (cr.estado !== 'CASTIGADO') throw new ErrorConflicto('Solo se recupera un credito castigado');
+      if (!cr.cabe) throw new ErrorConflicto(`El monto supera lo castigado pendiente (${cr.pendiente})`);
+
+      let debito; let transaccion = null; let cuentaId = null; let saldoCuenta = null;
+      if (via === 'CAJA') {
+        const control = await cajaAbierta(tx, actor);
+        if (!control) throw new ErrorConflicto('Abra su caja del dia antes de cobrar');
+        if (detalle) {
+          const { suma } = await totalEfectivo(tx, detalle);
+          if (!await mismoValor(tx, suma, m)) throw new ErrorSolicitud(`El efectivo suma ${suma}, no ${m}`);
+        }
+        transaccion = (await tx.query(
+          `INSERT INTO tecnifin.transacciones_caja (control_caja_id, socio_id, credito_id, tipo_operacion, monto, usuario_id, concepto)
+           VALUES (@control, @socio, @credito, 'RECUPERACION_CASTIGO', @m::numeric, @u, @g) RETURNING transaccion_id, numero_comprobante`,
+          { control: control.control_id, socio: cr.socio_id, credito: cr.credito_id, m, u: actor.usuario_id,
+            g: `Recuperacion del credito castigado ${c}` })).rows[0];
+        debito = (await tx.query(
+          `SELECT valor FROM tecnifin.parametros_cooperativa WHERE clave = 'caja.cuenta_efectivo'`)).rows[0]?.valor || '110105';
+      } else {
+        const cuenta = (await tx.query(
+          `SELECT c.cuenta_id, c.socio_id, c.estado, p.es_certificado, p.permite_debitos, p.cuenta_activa
+             FROM tecnifin.cuentas c
+             JOIN tecnifin.productos_financieros p ON p.cooperativa_id = c.cooperativa_id AND p.producto_id = c.producto_id
+            WHERE c.numero_cuenta = @n FOR UPDATE OF c`, { n: Number(numeroCuenta) || 0 })).rows[0];
+        if (!cuenta || String(cuenta.socio_id) !== String(cr.socio_id) || cuenta.estado !== 'ACTIVA' || cuenta.es_certificado
+            || !cuenta.permite_debitos) {
+          throw new ErrorConflicto('La cuenta de debito debe ser de ahorro del mismo socio, activa y admitir debitos');
+        }
+        const upd = (await tx.query(
+          `UPDATE tecnifin.cuentas SET saldo = saldo - @m::numeric WHERE cuenta_id = @id AND saldo - @m::numeric >= 0
+           RETURNING saldo::text AS saldo`, { m, id: cuenta.cuenta_id })).rows[0];
+        if (!upd) throw new ErrorConflicto('Saldo insuficiente en la cuenta');
+        cuentaId = cuenta.cuenta_id; saldoCuenta = upd.saldo; debito = cuenta.cuenta_activa;
+      }
+      const orden = { COMERCIAL: '720305', CONSUMO: '720310', VIVIENDA: '720315', MICROEMPRESA: '720320' }[cr.segmento];
+      const glosa = `Recuperacion del credito castigado ${c}`;
+      const asiento = await asentar(tx, actor, { concepto: glosa, origenModulo: 'CREDITOS', origenId: c,
+        tipoDocumento: 'RECUPERACION_CASTIGO', lineas: [
+          { codigo: debito, tipo: 'D', valor: m, socioId: cr.socio_id },
+          { codigo: '560405', tipo: 'H', valor: m, socioId: cr.socio_id },
+          { codigo: orden, tipo: 'D', valor: m, socioId: cr.socio_id },
+          { codigo: '710310', tipo: 'H', valor: m, socioId: cr.socio_id },
+        ] });
+      if (transaccion) {
+        await tx.query(`UPDATE tecnifin.transacciones_caja SET asiento_contable_id = @a WHERE transaccion_id = @t`,
+          { a: asiento, t: transaccion.transaccion_id });
+      } else {
+        await tx.query(
+          `INSERT INTO tecnifin.movimientos_cuenta (cuenta_id, tipo, monto, saldo_resultante, concepto, usuario_id, asiento_contable_id)
+           VALUES (@c, 'TRANSFERENCIA_SALIDA', @m::numeric, @s::numeric, @g, @u, @a)`,
+          { c: cuentaId, m, s: saldoCuenta, g: glosa, u: actor.usuario_id, a: asiento });
+      }
+      const fila = (await tx.query(
+        `UPDATE tecnifin.creditos SET monto_recuperado = monto_recuperado + @m::numeric WHERE credito_id = @id
+         RETURNING monto_recuperado::text AS recuperado, (monto_castigado - monto_recuperado)::text AS pendiente`,
+        { m, id: cr.credito_id })).rows[0];
+      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'RECUPERAR_CASTIGO', entidadTipo: 'CREDITO', entidadId: c,
+        campo: 'monto_recuperado', nuevo: fila.recuperado, detalle: `${via}: ${m}.` });
+      return { credito: c, recuperado: fila.recuperado, pendiente: fila.pendiente,
+        comprobante: transaccion ? Number(transaccion.numero_comprobante) : null };
+    });
+  }
+
+  return { consultar, procesar, reversar, castigar, recuperar };
 }

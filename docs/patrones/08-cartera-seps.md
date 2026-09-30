@@ -65,7 +65,11 @@ el proceso de cartera). Asiento: D 1499xx / H cada cuota desde su `cuenta_capita
 D 710310 (cartera castigada) / H 7203xx del segmento. Credito `CASTIGADO`, cuotas `CASTIGADA`; deja de ser
 cartera para la clasificacion y los reportes.
 
-## 8. Pendiente
+## 8. Recuperacion de castigados (0026)
 
-Recuperacion de cartera castigada (ingreso 560405 y reverso del control de orden), interes devengado y su
+POST /api/cartera/castigos/:credito/recuperacion { monto, origen: CAJA | CUENTA } (cobro: TELLER y supervisores). Lo cobrado va a 560405 (De activos castigados) y baja el control de orden (D 7203xx / H 710310) en el mismo monto; creditos.monto_castigado y monto_recuperado impiden recuperar mas de lo castigado (CHECK). En caja entra al cuadre como RECUPERACION_CASTIGO. servicio.js de cartera esta en 463 lineas: lo proximo que se agregue va a un archivo propio (regla 4).
+
+## 9. Pendiente
+
+Interes devengado y su
 reversion al pasar a no devenga, refinanciados y reestructurados (1405..1408), proceso programado de fin de mes.

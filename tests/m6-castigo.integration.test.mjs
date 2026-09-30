@@ -142,3 +142,19 @@ test('con provision al 100 %: baja contra 1499, capital fuera de la cartera y co
   assert.equal(clasificacion.cuerpo.totales.carteraBruta, '0.00', 'un castigado ya no es cartera');
   assert.equal((await castigar(t.gerente)).estado, 409, 'no se castiga dos veces');
 });
+
+test('recuperacion: a ingreso 560405, baja el control de orden y nunca supera lo castigado', async () => {
+  const recuperar = (monto) => llamar('/api/cartera/castigos/CRED-000001/recuperacion', { metodo: 'POST', token: t.caja,
+    cuerpo: { monto, origen: 'CAJA' } });
+  assert.equal((await recuperar('3000.01')).estado, 409);
+  const r = await recuperar('1200');
+  assert.equal(r.estado, 201);
+  assert.deepEqual([r.cuerpo.recuperado, r.cuerpo.pendiente], ['1200.00', '1800.00']);
+  assert.ok(r.cuerpo.comprobante > 0);
+  const s = await saldos();
+  assert.equal(s['560405'], '-1200.00', 'ingreso (saldo acreedor)');
+  assert.equal(s['710310'], '1800.00', 'el control baja lo recuperado');
+  const caja = await llamar('/api/caja', { token: t.caja });
+  assert.equal(caja.cuerpo.ingresos, '1210.00', 'certificado 10 + recuperacion 1200');
+  assert.equal((await recuperar('1800.01')).estado, 409);
+});

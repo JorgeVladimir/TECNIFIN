@@ -121,7 +121,7 @@ export function crearServicioCaja({ db, jwt, alertar = async () => {} }) {
     return (await tx.query(
       `SELECT count(*) FILTER (WHERE NOT anulado)::int AS operaciones,
               count(*) FILTER (WHERE anulado)::int AS anuladas,
-              coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion IN ('DEPOSITO_AHORROS', 'PAGO_CREDITO')), 0)::numeric(18,2)::text AS ingresos,
+              coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion IN ('DEPOSITO_AHORROS', 'PAGO_CREDITO', 'RECUPERACION_CASTIGO')), 0)::numeric(18,2)::text AS ingresos,
               coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion = 'RETIRO_AHORROS'), 0)::numeric(18,2)::text AS egresos
          FROM tecnifin.transacciones_caja WHERE control_caja_id = @control`, { control: controlId })).rows[0];
   }
