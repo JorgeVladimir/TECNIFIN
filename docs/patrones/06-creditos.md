@@ -66,6 +66,23 @@ sin base viven en `src/modules/creditos/calculo.js`.
   cartera 1401..1428 del credito vuelve a cero.
 - El cierre de caja suma `PAGO_CREDITO` como ingreso.
 
-Pendiente de M3: pago parcial y cancelacion anticipada, interes de mora (tasa por dato), rubros por cuota
-(seguro, gastos) como datos, scoring. Luego M6 (cartera SEPS: vencimiento, no devenga, reclasificacion y
+## 5. Mora y cancelacion anticipada (1-oct-2026, migracion 0025, `src/modules/creditos/cobro.js`)
+
+| Endpoint | Rol | Efecto |
+|---|---|---|
+| `GET /api/creditos/:codigo/cancelacion` | Cobro | Liquidacion a hoy: capital, interes y mora |
+| `POST /api/creditos/:codigo/cancelacion` | Cobro | Cobra todo (caja o cuenta) y deja el credito `CANCELADO` |
+
+- **Mora:** cada cuota vencida suma `round(capital * tasa/100 * factor * dias_mora / base, 2)` a la cuenta 510430
+  (De mora). `credito.factor_mora` = 1.1 y `credito.base_dias` = 360 por defecto, en `parametros_cooperativa`;
+  **los debe validar el contador** con la norma vigente del BCE/JPRMF.
+- **Cancelacion anticipada sin penalizacion:** cuotas vencidas completas con su mora; la cuota en curso solo el
+  interes corrido sobre el capital aun no vencido (sin pasar el interes de la cuota); las futuras, solo capital.
+- `pagos_credito` guarda `mora` y `tipo` (CUOTAS/CANCELACION); el total es capital + interes + mora (CHECK).
+- La anulacion reversa tambien la mora y devuelve cada cuota a su **estado anterior** (`estado_antes_pago`):
+  una cuota VENCIDA por el proceso de cartera vuelve a VENCIDA, no a PENDIENTE (defecto corregido).
+- El cobro vive en `cobro.js` y el ciclo de otorgamiento en `servicio.js` (regla 4: 500 lineas por archivo).
+
+Pendiente de M3: abono parcial a capital con recalculo de la tabla, rubros por cuota (seguro, gastos) como datos,
+scoring. Luego M6 (cartera SEPS: vencimiento, no devenga, reclasificacion y
 provisiones) reutiliza `calculo.js` y `cuenta_capital`.

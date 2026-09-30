@@ -53,6 +53,8 @@ export const FAMILIA_CARTERA = {
 };
 // Ingreso por intereses de cartera por segmento (familia 5104).
 export const CUENTA_INTERES = { COMERCIAL: '510405', CONSUMO: '510410', VIVIENDA: '510415', MICROEMPRESA: '510420' };
+// Interes de mora cobrado sobre cuotas vencidas (5104 'De mora').
+export const CUENTA_INTERES_MORA = '510430';
 
 // Bandas de antiguedad desde el plan de cuentas: NUNCA una tabla en el codigo, porque no
 // son simetricas entre familias (1402 corta en 360, 1422 en 270, 1423 tiene seis bandas).

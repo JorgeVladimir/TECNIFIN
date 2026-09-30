@@ -135,13 +135,19 @@ async function rutasCreditos(creditos, req, res, url, contexto) {
     }
     return undefined;
   }
-  const cred = /^\/api\/creditos\/(CRED-[0-9]{6,12})(\/pagos)?$/i.exec(p);
+  const cred = /^\/api\/creditos\/(CRED-[0-9]{6,12})(\/pagos|\/cancelacion)?$/i.exec(p);
   if (cred && !cred[2] && req.method === 'GET') {
     return responder(res, 200, await creditos.verCredito(tokenBearer(req), cred[1], contexto), solicitudId);
   }
+  if (cred && cred[2] === '/cancelacion' && req.method === 'GET') {
+    return responder(res, 200, await creditos.liquidacionCancelacion(tokenBearer(req), cred[1], contexto), solicitudId);
+  }
   if (cred && cred[2] && req.method === 'POST') {
     const token = tokenBearer(req);
-    return responder(res, 201, await creditos.pagarCuotas(token, cred[1], await leerJson(req), contexto), solicitudId);
+    const cuerpo = await leerJson(req);
+    return cred[2] === '/pagos'
+      ? responder(res, 201, await creditos.pagarCuotas(token, cred[1], cuerpo, contexto), solicitudId)
+      : responder(res, 201, await creditos.cancelarAnticipado(token, cred[1], cuerpo, contexto), solicitudId);
   }
   const anular = /^\/api\/creditos\/pagos\/([0-9]{1,15})\/anular$/.exec(p);
   if (anular && req.method === 'POST') {

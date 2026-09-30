@@ -3,7 +3,7 @@
 **Modo:** NORMAL — Claude orquesta y ejecuta; Codex disponible para unidades repetibles.
 **Actualizado:** 2026-09-29 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Entregable 1:** revisión el 15-oct-2026 (sistema y web, sin dominio) · **Hito H1:** confirmación del Jefe de Proyecto el 31-oct-2026 (contrato consolidado v2, 29-sep).
 
-## Hecho (último commit verde en main: ver git log; 146 pruebas, 24 migraciones)
+## Hecho (último commit verde en main: ver git log; 151 pruebas, 25 migraciones)
 - Fase 0: proyecto, reglas 1-14, pruebas de higiene, CI verde en GitHub (ejecución #1 sobre `953ee54`).
 - DAT-01: 31 tablas multi-tenant, RLS `FORCE`, `withTenant`, roles `tecnifin_admin`/`tecnifin_app`, numeración por cooperativa desde 1.
 - DAT-02: cartera SEPS, solvencia, tasas de crédito, banca en línea; semillas del Catálogo Único (994 cuentas, por cooperativa); base `tecnifin_demo`. 40 tablas, 42 políticas.
@@ -11,6 +11,7 @@
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 - APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
+- M3 mora y cancelación anticipada (1-oct): interés de mora a 510430, cancelación sin penalización con interés corrido, anulación que devuelve cada cuota a su estado real; cobro separado en cobro.js; migración 0025; 5 pruebas.
 - M7 reportes SEPS (1-oct): ESF, PERLAS, B11, UAF, situación general y solvencia regulatoria desde el mismo libro y motor de cartera, en centavos y BigInt; 9 pruebas.
 - M5 contabilidad (1-oct): libro diario paginado, balance de comprobación jerárquico con saldo por naturaleza, mayor con saldo acumulado, asiento manual y cierre de período; 6 pruebas.
 - M6 cartera SEPS (1-oct): clasificación por cuota (por vencer, no devenga, vencida) con bandas del plan, calificación y provisión, simulación, aplicación con control contable al centavo, reversión exacta cuota por cuota; migraciones 0022-0024; 7 pruebas.
