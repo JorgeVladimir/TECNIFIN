@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { hashearClave, verificarClave } from '../../platform/credenciales.js';
 import { ErrorAutenticacion } from '../../platform/jwt.js';
 import {
@@ -14,8 +14,43 @@ export class ErrorAutorizacion extends Error {
 export class ErrorConfiguracion extends Error {
   constructor() { super('Configuracion de autenticacion incompleta'); this.name = 'ErrorConfiguracion'; this.statusCode = 503; }
 }
+export class ErrorNoEncontrado extends Error {
+  constructor() { super('No encontrado'); this.name = 'ErrorNoEncontrado'; this.statusCode = 404; }
+}
+export class ErrorConflicto extends Error {
+  constructor(message) { super(message); this.name = 'ErrorConflicto'; this.statusCode = 409; }
+}
+export class ErrorCambioClavePendiente extends Error {
+  constructor() { super('Debe cambiar su clave antes de continuar'); this.name = 'ErrorCambioClavePendiente'; this.statusCode = 403; }
+}
 
 const ROLES_ADMIN_USUARIOS = new Set(['SUPER_USER', 'ADMIN']);
+// Mismo conjunto que ck_usuarios_rol: validar aqui da un 400 claro en vez de un error de la base.
+const ROLES_VALIDOS = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER', 'TELLER', 'MEMBER']);
+const CLAVE_MINIMA = 10;
+
+// Un ADMIN administra a todos salvo a SUPER_USER: ni lo toca ni lo crea. Asi nadie se
+// eleva por encima de su propio rol.
+function puedeAdministrar(actor, rolObjetivo) {
+  return actor.rol === 'SUPER_USER' || rolObjetivo !== 'SUPER_USER';
+}
+
+function validarClaveNueva(login, clave) {
+  if (typeof clave !== 'string' || clave.length < CLAVE_MINIMA || clave.length > 128) {
+    throw new ErrorSolicitud(`La clave debe tener entre ${CLAVE_MINIMA} y 128 caracteres`);
+  }
+  if (clave.toLowerCase().includes(login)) throw new ErrorSolicitud('La clave no puede contener el usuario');
+}
+
+// Clave temporal de un solo uso: se entrega una vez al administrador y obliga a cambiarla
+// en el primer ingreso (requiere_cambio_pin). No se guarda ni se registra en claro.
+const claveTemporal = () => randomBytes(12).toString('base64url');
+
+function nombreValido(valor) {
+  const nombre = String(valor || '').trim();
+  if (nombre.length < 3 || nombre.length > 150) throw new ErrorSolicitud('Nombre invalido');
+  return nombre;
+}
 
 function loginCanonico(valor) {
   const login = String(valor || '').trim().toLowerCase();
@@ -91,7 +126,7 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {} }) {
     };
   }
 
-  async function ejecutarAutenticado(token, contexto, operacion) {
+  async function ejecutarAutenticado(token, contexto, operacion, { permitirCambioPendiente = false } = {}) {
     let claims;
     try { claims = jwt.verificar(token); }
     catch (error) {
@@ -100,13 +135,19 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {} }) {
     }
     const resultado = await withTenant(claims.coop, async tx => {
       const identidad = (await tx.query(
-        `SELECT u.usuario_id, u.login, u.nombre_completo, u.rol, u.activo
+        `SELECT u.usuario_id, u.login, u.nombre_completo, u.rol, u.activo, u.requiere_cambio_pin,
+                u.impresora_predeterminada, u.password_hash
            FROM tecnifin.usuarios u
            JOIN tecnifin.cooperativas c ON c.cooperativa_id = u.cooperativa_id
           WHERE u.usuario_id = @usuario AND c.activa`, { usuario: claims.sub })).rows[0];
       if (!identidad || !identidad.activo || identidad.login !== claims.login) {
         await auditar(tx, claims.login, 'TOKEN_RECHAZADO', 'Identidad inactiva o sin pertenencia vigente.');
         return { error: new ErrorAutenticacion() };
+      }
+      // Con clave temporal solo se puede ver el perfil y cambiar la clave: una clave que
+      // conoce el administrador no debe servir para operar.
+      if (identidad.requiere_cambio_pin && !permitirCambioPendiente) {
+        return { error: new ErrorCambioClavePendiente() };
       }
       return operacion(tx, identidad);
     }, null, { solicitudId: contexto.solicitudId, usuarioLogin: claims.login });
@@ -143,5 +184,129 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { login, listarUsuarios, leerConfiguracion };
+  // Estado del servicio: no revela version, host ni datos de ninguna cooperativa.
+  async function salud() {
+    try {
+      await db.query('SELECT 1');
+      return { estado: 'ok', base: 'ok' };
+    } catch {
+      throw Object.assign(new Error('Base de datos no disponible'), { statusCode: 503 });
+    }
+  }
+
+  async function perfil(token, contexto = {}) {
+    return ejecutarAutenticado(token, contexto, async (_tx, actor) => ({
+      login: actor.login, nombre: actor.nombre_completo, rol: actor.rol,
+      requiereCambioPin: actor.requiere_cambio_pin, impresora: actor.impresora_predeterminada,
+    }), { permitirCambioPendiente: true });
+  }
+
+  async function cambiarClave(token, { claveActual, claveNueva } = {}, contexto = {}) {
+    return ejecutarAutenticado(token, contexto, async (tx, actor) => {
+      if (typeof claveActual !== 'string' || !claveActual) throw new ErrorSolicitud('Credenciales incompletas');
+      validarClaveNueva(actor.login, claveNueva);
+      if (!await verificarClave(actor.login, claveActual, actor.password_hash)) {
+        await auditar(tx, actor.login, 'CAMBIO_CLAVE_FALLIDO', 'Clave actual incorrecta.');
+        return { error: new ErrorSolicitud('Clave actual incorrecta') };
+      }
+      if (claveActual === claveNueva) throw new ErrorSolicitud('La clave nueva debe ser distinta');
+      await tx.query(
+        `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = false
+          WHERE usuario_id = @id`, { hash: await hashearClave(actor.login, claveNueva), id: actor.usuario_id });
+      await auditar(tx, actor.login, 'CAMBIO_CLAVE', 'El usuario cambio su clave.');
+      return { ok: true };
+    }, { permitirCambioPendiente: true });
+  }
+
+  // Envoltura comun de la administracion de usuarios: lista blanca de roles y auditoria
+  // de la denegacion en la misma transaccion.
+  function comoAdministrador(token, contexto, concepto, operacion) {
+    return ejecutarAutenticado(token, contexto, async (tx, actor) => {
+      if (!ROLES_ADMIN_USUARIOS.has(actor.rol)) {
+        await auditar(tx, actor.login, `${concepto}_DENEGADO`, 'Intento sin rol autorizado.');
+        return { error: new ErrorAutorizacion() };
+      }
+      return operacion(tx, actor);
+    });
+  }
+
+  async function buscarObjetivo(tx, actor, loginObjetivo, concepto) {
+    const login = loginCanonico(loginObjetivo);
+    const objetivo = (await tx.query(
+      `SELECT usuario_id, login, rol, activo FROM tecnifin.usuarios WHERE login = @login`, { login })).rows[0];
+    if (!objetivo) return { error: new ErrorNoEncontrado() };
+    // Sobre si mismo se usa cambiar-clave: asi un administrador no se desactiva ni se
+    // quita el rol por error y deja a la cooperativa sin nadie que administre.
+    if (objetivo.usuario_id === actor.usuario_id) {
+      return { error: new ErrorSolicitud('No puede administrar su propio usuario') };
+    }
+    if (!puedeAdministrar(actor, objetivo.rol)) {
+      await auditar(tx, actor.login, `${concepto}_DENEGADO`, `Intento sobre ${objetivo.login} (${objetivo.rol}).`);
+      return { error: new ErrorAutorizacion() };
+    }
+    return { objetivo };
+  }
+
+  async function crearUsuario(token, { login: loginNuevo, nombre, rol } = {}, contexto = {}) {
+    return comoAdministrador(token, contexto, 'ALTA_USUARIO', async (tx, actor) => {
+      const login = loginCanonico(loginNuevo);
+      const nombreCompleto = nombreValido(nombre);
+      if (!ROLES_VALIDOS.has(rol)) throw new ErrorSolicitud('Rol invalido');
+      if (!puedeAdministrar(actor, rol)) {
+        await auditar(tx, actor.login, 'ALTA_USUARIO_DENEGADO', `Intento de crear ${login} con rol ${rol}.`);
+        return { error: new ErrorAutorizacion() };
+      }
+      const existe = (await tx.query(`SELECT 1 FROM tecnifin.usuarios WHERE login = @login`, { login })).rows[0];
+      if (existe) throw new ErrorConflicto('El usuario ya existe');
+      const temporal = claveTemporal();
+      await tx.query(
+        `INSERT INTO tecnifin.usuarios (login, nombre_completo, password_hash, rol, requiere_cambio_pin, fecha_registro)
+         VALUES (@login, @nombre, @hash, @rol, true, current_date)`,
+        { login, nombre: nombreCompleto, hash: await hashearClave(login, temporal), rol });
+      await auditar(tx, actor.login, 'ALTA_USUARIO', `Alta de ${login} con rol ${rol}.`);
+      return { login, rol, claveTemporal: temporal, requiereCambioPin: true };
+    });
+  }
+
+  async function actualizarUsuario(token, loginObjetivo, { rol, activo } = {}, contexto = {}) {
+    return comoAdministrador(token, contexto, 'CAMBIO_USUARIO', async (tx, actor) => {
+      if (rol === undefined && activo === undefined) throw new ErrorSolicitud('Nada que actualizar');
+      if (rol !== undefined && !ROLES_VALIDOS.has(rol)) throw new ErrorSolicitud('Rol invalido');
+      if (activo !== undefined && typeof activo !== 'boolean') throw new ErrorSolicitud('activo debe ser booleano');
+      const busqueda = await buscarObjetivo(tx, actor, loginObjetivo, 'CAMBIO_USUARIO');
+      if (busqueda.error) return busqueda;
+      const { objetivo } = busqueda;
+      const rolFinal = rol ?? objetivo.rol;
+      const activoFinal = activo ?? objetivo.activo;
+      if (!puedeAdministrar(actor, rolFinal)) {
+        await auditar(tx, actor.login, 'CAMBIO_USUARIO_DENEGADO', `Intento de asignar ${rolFinal} a ${objetivo.login}.`);
+        return { error: new ErrorAutorizacion() };
+      }
+      await tx.query(
+        `UPDATE tecnifin.usuarios SET rol = @rol, activo = @activo WHERE usuario_id = @id`,
+        { rol: rolFinal, activo: activoFinal, id: objetivo.usuario_id });
+      await auditar(tx, actor.login, 'CAMBIO_USUARIO',
+        `${objetivo.login}: rol ${objetivo.rol} -> ${rolFinal}; activo ${objetivo.activo} -> ${activoFinal}.`);
+      return { login: objetivo.login, rol: rolFinal, activo: activoFinal };
+    });
+  }
+
+  async function restablecerClave(token, loginObjetivo, contexto = {}) {
+    return comoAdministrador(token, contexto, 'RESTABLECER_CLAVE', async (tx, actor) => {
+      const busqueda = await buscarObjetivo(tx, actor, loginObjetivo, 'RESTABLECER_CLAVE');
+      if (busqueda.error) return busqueda;
+      const { objetivo } = busqueda;
+      const temporal = claveTemporal();
+      await tx.query(
+        `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = true WHERE usuario_id = @id`,
+        { hash: await hashearClave(objetivo.login, temporal), id: objetivo.usuario_id });
+      await auditar(tx, actor.login, 'RESTABLECER_CLAVE', `Clave temporal emitida para ${objetivo.login}.`);
+      return { login: objetivo.login, claveTemporal: temporal, requiereCambioPin: true };
+    });
+  }
+
+  return {
+    login, listarUsuarios, leerConfiguracion, salud, perfil, cambiarClave,
+    crearUsuario, actualizarUsuario, restablecerClave,
+  };
 }

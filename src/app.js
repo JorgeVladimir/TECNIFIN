@@ -43,8 +43,40 @@ export function crearAplicacion(servicio) {
         const cuerpo = await leerJson(req);
         return responder(res, 200, await servicio.login(cuerpo, contexto), solicitudId);
       }
-      if (req.method === 'GET' && url.pathname === '/api/usuarios') {
-        return responder(res, 200, await servicio.listarUsuarios(tokenBearer(req), contexto), solicitudId);
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        return responder(res, 200, await servicio.salud(), solicitudId);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/perfil') {
+        return responder(res, 200, await servicio.perfil(tokenBearer(req), contexto), solicitudId);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/auth/cambiar-clave') {
+        const token = tokenBearer(req);
+        return responder(res, 200, await servicio.cambiarClave(token, await leerJson(req), contexto), solicitudId);
+      }
+      if (url.pathname === '/api/usuarios') {
+        if (req.method === 'GET') {
+          return responder(res, 200, await servicio.listarUsuarios(tokenBearer(req), contexto), solicitudId);
+        }
+        if (req.method === 'POST') {
+          const token = tokenBearer(req);
+          return responder(res, 201, await servicio.crearUsuario(token, await leerJson(req), contexto), solicitudId);
+        }
+      }
+      // El login viaja en la ruta ya validado por el servicio (loginCanonico); nunca el id interno.
+      const rutaUsuario = /^\/api\/usuarios\/([^/]+)(\/restablecer-clave)?$/.exec(url.pathname);
+      if (rutaUsuario) {
+        let loginObjetivo;
+        try { loginObjetivo = decodeURIComponent(rutaUsuario[1]); }
+        catch { throw Object.assign(new Error('Ruta invalida'), { statusCode: 400 }); }
+        if (!rutaUsuario[2] && req.method === 'PUT') {
+          const token = tokenBearer(req);
+          return responder(res, 200,
+            await servicio.actualizarUsuario(token, loginObjetivo, await leerJson(req), contexto), solicitudId);
+        }
+        if (rutaUsuario[2] && req.method === 'POST') {
+          return responder(res, 200,
+            await servicio.restablecerClave(tokenBearer(req), loginObjetivo, contexto), solicitudId);
+        }
       }
       if (req.method === 'GET' && url.pathname === '/api/configuracion') {
         return responder(res, 200, await servicio.leerConfiguracion(tokenBearer(req), contexto), solicitudId);

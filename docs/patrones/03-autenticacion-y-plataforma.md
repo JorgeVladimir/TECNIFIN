@@ -82,6 +82,31 @@ aceptarlo expresamente o exigir las opciones 2/3 antes de produccion.
 Un JWT con firma invalida no aporta un tenant confiable para insertar en una tabla RLS. Se rechaza con 401 y se
 envia alerta operacional sin confiar en su payload; no se usa el `coop` manipulado para escribir auditoria.
 
+## 5b. Endpoints de plataforma ya repetidos con este patron (29-sep-2026)
+
+| Endpoint | Rol | Auditoria |
+|---|---|---|
+| `GET /api/health` | Publico; solo `SELECT 1`, sin version ni datos | — |
+| `GET /api/perfil` | Cualquier usuario activo, incluso con clave temporal | — |
+| `POST /api/auth/cambiar-clave` | El propio usuario; 10-128 caracteres, sin contener el login | `CAMBIO_CLAVE`, `CAMBIO_CLAVE_FALLIDO` |
+| `POST /api/usuarios` | `SUPER_USER`/`ADMIN`; `ADMIN` no crea `SUPER_USER` | `ALTA_USUARIO`, `ALTA_USUARIO_DENEGADO` |
+| `PUT /api/usuarios/:login` | Igual; cambia `rol`/`activo`; nadie se administra a si mismo | `CAMBIO_USUARIO`, `CAMBIO_USUARIO_DENEGADO` |
+| `POST /api/usuarios/:login/restablecer-clave` | Igual; `ADMIN` no toca `SUPER_USER` | `RESTABLECER_CLAVE`, `RESTABLECER_CLAVE_DENEGADO` |
+
+Reglas nuevas que el ejecutor repite:
+
+- **Clave temporal** (alta y restablecimiento): 16 caracteres aleatorios, se devuelve una sola vez y marca
+  `requiere_cambio_pin`. Mientras siga marcada, `ejecutarAutenticado` solo deja pasar las operaciones que
+  declaran `permitirCambioPendiente` (perfil y cambio de clave); el resto responde 403.
+- **Desactivar** corta los tokens vigentes en la siguiente peticion, porque la identidad se relee en cada
+  operacion. **Restablecer la clave NO invalida** los tokens ya emitidos hasta su `exp`: depende de la
+  pregunta abierta de invalidacion (Christian).
+- Validaciones de entrada (`ErrorSolicitud`, `ErrorConflicto`) se lanzan y revierten; las denegaciones se
+  **devuelven** como `{ error }` para que su auditoria confirme.
+
+Fuera de esta unidad: recuperacion de clave por correo (`forgot/reset-password`) y diagnostico SMTP, que
+necesitan la capa de correo y una tabla de codigos de un solo uso; y la impresora predeterminada del usuario.
+
 ## 6. Que debe repetir y probar el ejecutor
 
 Cada endpoint nuevo:

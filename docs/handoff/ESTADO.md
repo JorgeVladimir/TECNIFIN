@@ -1,16 +1,17 @@
 # Estado del proyecto (se actualiza al cerrar cada unidad de trabajo)
 
-**Modo:** RESERVA — Claude Code ha llegado al ~90 % del limite semanal (88 % semanal / 89 % de sesion a las 20:53; reinicia el jueves 24-sep 11:59). Codex continua solo; Claude solo orquesta con el minimo de tokens.
-**Actualizado:** 2026-09-22 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Hito H1:** modelo de BD multi-tenant, acta el 30-oct-2026.
+**Modo:** NORMAL — Claude orquesta y ejecuta; Codex disponible para unidades repetibles.
+**Actualizado:** 2026-09-29 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Entregable 1:** revisión el 15-oct-2026 (sistema y web, sin dominio) · **Hito H1:** confirmación del Jefe de Proyecto el 31-oct-2026 (contrato consolidado v2, 29-sep).
 
-## Hecho (último commit verde: `5fecbe5`; entrega APP-01 sin commit: 62 pruebas, 15 migraciones)
+## Hecho (último commit verde en main: ver git log; 71 pruebas, 15 migraciones)
 - Fase 0: proyecto, reglas 1-14, pruebas de higiene, CI verde en GitHub (ejecución #1 sobre `953ee54`).
 - DAT-01: 31 tablas multi-tenant, RLS `FORCE`, `withTenant`, roles `tecnifin_admin`/`tecnifin_app`, numeración por cooperativa desde 1.
 - DAT-02: cartera SEPS, solvencia, tasas de crédito, banca en línea; semillas del Catálogo Único (994 cuentas, por cooperativa); base `tecnifin_demo`. 40 tablas, 42 políticas.
 - Borradores ADR-0001/0002/0003 y ARQ-01 (estado «propuesta»).
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
-- APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03.
+- APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
+- APP-01 resto (29-sep): salud, perfil, cambio de clave, alta/rol/activo y restablecimiento de clave de usuarios; clave temporal obliga a cambiarla; 9 pruebas nuevas.
 
 ## En curso
 Unidad 3 APP-01 entregada en `wip/app01-patron`, pendiente de revisión y commit del orquestador. La siguiente
@@ -20,7 +21,8 @@ unidad es redactar y ejecutar el resto de endpoints de plataforma (#4) repitiend
 - ADR-0001/0002/0003 sin revisar por Christian (ADR-0002 no se aprueba por silencio).
 - ALTO 1: opción 1 con controles implementados; SQL arbitrario aún puede cambiar y restaurar el tenant dentro de una sentencia sin ser detectado. Christian debe aceptar el riesgo; no habilita producción.
 - `socios.pin` y `usuarios.pin` en claro (PA6, seguridad).
-- Push a GitHub: lo hace Jorge; hay 4 commits locales sin subir en este repo.
+- Restablecer una clave no invalida los JWT ya emitidos hasta su exp (pregunta abierta de invalidación, Christian).
+- Push a GitHub: lo hace Jorge; hay commits locales sin subir en este repo.
 
 ## Cola nocturna de Codex (20-sep)
 - El limite semanal de Codex **no** se reinicio a las 21:09: el propio Codex indica **22:08** (smoke de las 21:14 fallo por limite de uso).

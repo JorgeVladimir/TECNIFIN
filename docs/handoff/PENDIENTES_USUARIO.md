@@ -6,8 +6,8 @@
 3. Formato de los códigos `CRED-`/`SOL-`/`DPF-`: ¿lo exige algún documento impreso o reporte a la SEPS? (Supuesto: se conserva.)
 4. `tasas_credito.plazo_minimo/maximo`: ¿meses o días? (Supuesto: meses.)
 5. Nombres del Catálogo Único truncados a ~30 caracteres: ¿los reportes necesitan el nombre completo?
-6. Contrato v3: cláusula 10.5 (pagos a Christian) y Fase 3 (ya no es «migración de datos reales»; requiere acta).
-7. Contratar dominio `tecnifin.com` y hosting (tope USD 150). Hacer `git push` de este repo y de GUTT_SYSTEM.
+6. ~~Contrato v3~~ Resuelto en el contrato consolidado v2 (29-sep): Christian 497 × 10, Fase 3 = migración e integración sobre la demo, pagos al final de cada mes. Falta que la hoja de flujo de caja (Anexo D.5) cuadre (marzo a 350, Christian 497).
+7. Dominio y hosting **postergados** hasta la inscripción de la sociedad (nombre reservado en Supercias: GUTT, 24-sep). Hacer `git push` de este repo y de GUTT_SYSTEM.
 
 ## ALTO 1 — decisión provisional tomada, pendiente de aprobación expresa de Christian
 - **Jorge, 22-sep-2026: opción 1**, conservar GUC + controles compensatorios durante desarrollo; higiene, JWT y detección/alerta implementados. La detección de entrada/salida no observa un cambio y restauración dentro del mismo SQL. [Adenda ADR-0002](../adr/0002-aislamiento-de-datos.md#adenda-22-sep-2026--alto-1-confianza-en-la-fijación-del-tenant).
