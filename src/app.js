@@ -84,6 +84,27 @@ async function rutasSocios(socios, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M2 (caja y ventanilla).
+async function rutasCaja(caja, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  const p = url.pathname;
+  if (p === '/api/caja' && req.method === 'GET') {
+    return responder(res, 200, await caja.estadoCaja(tokenBearer(req), contexto), solicitudId);
+  }
+  if (req.method !== 'POST') return undefined;
+  const token = tokenBearer(req);
+  if (p === '/api/caja/apertura') return responder(res, 201, await caja.abrirCaja(token, await leerJson(req), contexto), solicitudId);
+  if (p === '/api/caja/cierre') return responder(res, 200, await caja.cerrarCaja(token, await leerJson(req), contexto), solicitudId);
+  if (p === '/api/caja/transacciones') {
+    return responder(res, 201, await caja.registrarTransaccion(token, await leerJson(req), contexto), solicitudId);
+  }
+  const anular = /^\/api\/caja\/transacciones\/([0-9]{1,15})\/anular$/.exec(p);
+  if (anular) {
+    return responder(res, 200, await caja.anularTransaccion(token, anular[1], await leerJson(req), contexto), solicitudId);
+  }
+  return undefined;
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -148,6 +169,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.caja && /^\/api\/caja(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasCaja(modulos.caja, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       return responder(res, 404, { error: 'Ruta no encontrada' }, solicitudId);
