@@ -94,6 +94,14 @@ export async function sembrarCooperativa(withTenant, cooperativaId, etiqueta) {
           tasa_inicial, tasa_final, tasa_aplicable)
        VALUES (@linea, 'CONSUMO', 100.00, 20000.00, 3, 48, 14.0000, 16.0000, 15.0000)`,
       { linea: `CONSUMO ${etiqueta}` });
+    // Tablas de APP-01: configuracion por cooperativa y una recuperacion de clave pendiente.
+    await tx.query(
+      `INSERT INTO tecnifin.parametros_cooperativa (clave, valor) VALUES ('interfaz.etiqueta', @etiqueta)`,
+      { etiqueta });
+    await tx.query(
+      `INSERT INTO tecnifin.recuperaciones_clave (usuario_id, token_hash, expira)
+       VALUES (@usuario, encode(sha256(convert_to(@etiqueta, 'UTF8')), 'hex'), now() + interval '1 hour')`,
+      { usuario: usuario.usuario_id, etiqueta });
 
     return {
       cooperativaId, etiqueta,

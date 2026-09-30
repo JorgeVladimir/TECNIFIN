@@ -15,7 +15,7 @@
 |---|---|---|---|
 | ARQ-01 | Documento de arquitectura multi-tenant | Borrador 0.1 para revisión | `docs/arquitectura/ARQ-01-arquitectura-multi-tenant.md` |
 | ARQ-02 | ADR críticas: tenant, aislamiento y modelo de datos | 3 ADR en estado «propuesta» | `docs/adr/0001`, `0002`, `0003` |
-| DAT-01 | Modelo de datos multi-tenant y scripts versionados | Construido, pendiente de acta | 15 migraciones en `db/migrations/`; diccionario `DAT-01-diccionario.md` |
+| DAT-01 | Modelo de datos multi-tenant y scripts versionados | Construido, pendiente de acta | 16 migraciones en `db/migrations/`; diccionario `DAT-01-diccionario.md` |
 | APP-01 | Núcleo multi-tenant: tenant, IAM, auditoría y configuración | Construido (adelantado: vencía el 30-nov) | `src/`, patrón `docs/patrones/03-*.md` |
 | — | Sitio web de la compañía, sin dominio | Ver sección 6 | — |
 
@@ -23,11 +23,11 @@
 
 | Indicador | Valor | Cómo comprobarlo |
 |---|---|---|
-| Migraciones versionadas, aplicadas en orden y con huella SHA-256 | 15 | `npm run migrate` |
-| Tablas del modelo | 41 | `node tools/diccionario.mjs` |
-| Tablas con datos de una cooperativa | 40, **todas** con seguridad por filas habilitada y forzada | idem |
-| Políticas de seguridad por filas | 44 | idem |
-| Pruebas automatizadas | **71 de 71 en verde** | `npm run verificar` |
+| Migraciones versionadas, aplicadas en orden y con huella SHA-256 | 16 | `npm run migrate` |
+| Tablas del modelo | 42 | `node tools/diccionario.mjs` |
+| Tablas con datos de una cooperativa | 41, **todas** con seguridad por filas habilitada y forzada | idem |
+| Políticas de seguridad por filas | 45 | idem |
+| Pruebas automatizadas | **78 de 78 en verde** | `npm run verificar` |
 | Plan de cuentas (Catálogo Único SEPS) sembrado por cooperativa | 994 cuentas por cooperativa, independientes | `tests/semillas.integration.test.mjs` |
 
 ## 3. Qué garantiza el modelo (y cómo se prueba)
@@ -45,7 +45,8 @@
    (no por la cuenta 14, que es neta de provisiones).
 8. **Acceso (APP-01)**: login por cooperativa con JWT firmado; el tenant sale del token verificado y nunca de la
    petición; roles por lista blanca; clave temporal obligatoria de cambiar; auditoría de cada acción y de cada
-   intento denegado; alerta si el contexto del tenant cambia a mitad de una operación.
+   intento denegado; alerta si el contexto del tenant cambia a mitad de una operación; recuperación de clave
+   por correo con código de un solo uso guardado solo como hash.
 
 Cumple los criterios técnicos de aceptación del **Anexo E** del contrato (tabla con RLS forzada, prueba de dos
 cooperativas, rol sin privilegios de dueño, montos con dos decimales y partida doble, plan de cuentas por
@@ -64,6 +65,7 @@ cooperativa, base de producción sin datos).
 | 22-sep | `d793318` | ALTO 1: controles de fijación del tenant (riesgo residual documentado) |
 | 22-sep | `5955514` | APP-01: autenticación, usuarios, auditoría y configuración por cooperativa |
 | 29-sep | `e9a0442` | APP-01: resto de endpoints de plataforma |
+| 30-sep | — | Entregable 1: informe, diccionario y sitio web; APP-01: recuperación de clave por correo |
 
 ## 5. Lo que requiere decisión expresa del Jefe de Proyecto (cláusula 6.3)
 
@@ -98,7 +100,7 @@ sociedad (cláusula 12.5, acuerdo del 29-sep).
 1. Leer ARQ-01 y los tres ADR; anotar observaciones en la tabla de la sección 8.
 2. Revisar el diccionario `DAT-01-diccionario.md` (índice al inicio: toda tabla con datos de cooperativa debe
    decir «RLS forzada: sí»).
-3. Opcional, en el equipo de desarrollo: `npm run verificar` (migraciones al día y 71 pruebas en verde).
+3. Opcional, en el equipo de desarrollo: `npm run verificar` (migraciones al día y 78 pruebas en verde).
 4. Registrar las observaciones antes del **22-oct** para subsanarlas dentro del plazo de la cláusula 8.3 y
    confirmar el **31-oct**.
 

@@ -104,8 +104,28 @@ Reglas nuevas que el ejecutor repite:
 - Validaciones de entrada (`ErrorSolicitud`, `ErrorConflicto`) se lanzan y revierten; las denegaciones se
   **devuelven** como `{ error }` para que su auditoria confirme.
 
-Fuera de esta unidad: recuperacion de clave por correo (`forgot/reset-password`) y diagnostico SMTP, que
-necesitan la capa de correo y una tabla de codigos de un solo uso; y la impresora predeterminada del usuario.
+### Recuperacion de clave y correo (30-sep-2026, migracion 0016)
+
+| Endpoint | Rol | Auditoria |
+|---|---|---|
+| `POST /api/auth/olvide-clave` | Publico: codigo de cooperativa + usuario | `RECUPERACION_SOLICITADA`, `_SIN_ENVIO`, `_LIMITADA` |
+| `POST /api/auth/restablecer-con-codigo` | Publico: cooperativa + codigo + clave nueva | `RECUPERACION_COMPLETADA`, `RECUPERACION_INVALIDA` |
+| `GET /api/admin/correo` | `SUPER_USER`/`ADMIN`; configuracion sin la clave SMTP | — |
+| `POST /api/admin/correo/prueba` | Igual; envia un correo de prueba | `PRUEBA_CORREO`, `PRUEBA_CORREO_FALLIDA` |
+
+- `olvide-clave` responde **siempre 202 con el mismo cuerpo**, exista o no la cooperativa, el usuario o su correo.
+- El codigo son 32 bytes aleatorios (43 caracteres); la base guarda solo su **SHA-256** en
+  `recuperaciones_clave` (con RLS). Un uso; un codigo nuevo anula los anteriores; vence en
+  `auth.recuperacion_minutos` (60 por defecto, maximo 1440). Maximo 3 solicitudes por usuario y hora.
+- El correo sale **despues** del COMMIT. Si falla, alerta `RECUPERACION_SIN_CORREO` y la respuesta no cambia.
+- `src/platform/correo.js` es la unica salida de correo: SMTP global por `TECNIFIN_SMTP_*`; errores reducidos a
+  codigo, nunca el texto del servidor ni la clave. Nodemailer >= 10.0.13 (las 6.x tienen avisos de seguridad).
+- `usuarios.correo` (0016) se fija en el alta o con `PUT /api/usuarios/:login`; se guarda en minusculas.
+
+Riesgo menor conocido: la respuesta de `olvide-clave` tarda algo mas cuando el usuario existe (inserta y
+envia). No revela datos en el cuerpo, pero un atacante paciente podria medirlo; mitigable con cola de envio.
+
+Pendiente: impresora predeterminada del usuario (preferencia de interfaz; entra con la pantalla de caja).
 
 ## 6. Que debe repetir y probar el ejecutor
 

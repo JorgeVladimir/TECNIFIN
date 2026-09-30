@@ -19,6 +19,7 @@
     "verificar": "node tools/verificar.mjs"
   },
   "dependencies": {
+    "nodemailer": "^10.0.13",
     "pg": "^8.13.0"
   }
 }

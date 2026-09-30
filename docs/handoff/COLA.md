@@ -6,8 +6,8 @@
 | 2a | ~~Corregir ALTO 2-3 y MEDIO 4-7~~ **HECHA 21-sep**: migración 0014, 51 pruebas | `ejecutor-dinero` (Sol, high) | `encargos/correcciones-revision-dat01-02.md` |
 | 2b | **ENTREGADA 22-sep**: adenda ALTO 1 + higiene y prueba del riesgo residual, 54 pruebas; opción 1 provisional de Jorge, pendiente de revisión expresa de Christian y commit del orquestador | `arquitecto` (Astra, high) | `encargos/alto1-fijacion-tenant.md` |
 | 3 | ~~APP-01 patrón~~ **FUSIONADA 29-sep** APP-01 · 3 endpoints, migración 0015, patrón 03 y 62 pruebas | `arquitecto` | `encargos/app01-autenticacion-usuarios-auditoria.md` |
-| 4 | ~~APP-01 resto~~ **HECHA 29-sep (Claude)**: salud, perfil, cambiar-clave, alta/rol/activo, restablecer clave; 71 pruebas. Queda recuperación por correo + SMTP | — | patrón 03 §5b |
-| 5 | M1 · socios y cuentas: patrón (primeros 2-3 endpoints) | `arquitecto` | por redactar |
+| 4 | ~~APP-01 resto~~ **HECHA 29-sep (Claude)**: salud, perfil, cambiar-clave, alta/rol/activo, restablecer clave; 71 pruebas. Recuperación por correo + SMTP **HECHA 30-sep** (0016, 78 pruebas) | — | patrón 03 §5b |
+| 5 | **SIGUIENTE** M1 · socios y cuentas: patrón (primeros 2-3 endpoints) | Claude | patrón 04 |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.
 

@@ -230,8 +230,10 @@ Tres migraciones más, aplicadas con `npm run migrate:apply` sin pendientes ni a
 | `0012_solvencia_regulatoria.sql` | `ponderaciones_riesgo`, `parametros_patrimonio_tecnico`, `parametros_regulatorios` |
 | `0013_tasas_credito_canal_socio.sql` | `tasas_credito`, `activacion_banca_linea`, `socio_documento_excepcion` |
 
-**Inventario final: 40 tablas.** 38 de negocio (con `cooperativa_id`) y 2 de plataforma (`cooperativas` y
-`parametros_plataforma`). El detalle de traducción —mapeo de nombres, unidades, cómo se siembra una
+**Inventario final de DAT-02: 40 tablas.** 38 de negocio (con `cooperativa_id`) y 2 de plataforma (`cooperativas` y
+`parametros_plataforma`). APP-01 agrega 2 de negocio: `parametros_cooperativa` (0015) y `recuperaciones_clave`
+(0016), más la columna `usuarios.correo`: **42 tablas en total**. El inventario vivo lo da
+`node tools/diccionario.mjs`. El detalle de traducción —mapeo de nombres, unidades, cómo se siembra una
 cooperativa, cómo se usa la demo— está en **`docs/patrones/02-catalogos-y-demo.md`**.
 
 ### Nueve decisiones tomadas al construir DAT-02

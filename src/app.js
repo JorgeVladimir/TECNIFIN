@@ -49,6 +49,19 @@ export function crearAplicacion(servicio) {
       if (req.method === 'GET' && url.pathname === '/api/perfil') {
         return responder(res, 200, await servicio.perfil(tokenBearer(req), contexto), solicitudId);
       }
+      if (req.method === 'POST' && url.pathname === '/api/auth/olvide-clave') {
+        return responder(res, 202, await servicio.olvideClave(await leerJson(req), contexto), solicitudId);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/auth/restablecer-con-codigo') {
+        return responder(res, 200, await servicio.restablecerConCodigo(await leerJson(req), contexto), solicitudId);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/admin/correo') {
+        return responder(res, 200, await servicio.estadoCorreo(tokenBearer(req), contexto), solicitudId);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/admin/correo/prueba') {
+        const token = tokenBearer(req);
+        return responder(res, 200, await servicio.probarCorreo(token, await leerJson(req), contexto), solicitudId);
+      }
       if (req.method === 'POST' && url.pathname === '/api/auth/cambiar-clave') {
         const token = tokenBearer(req);
         return responder(res, 200, await servicio.cambiarClave(token, await leerJson(req), contexto), solicitudId);

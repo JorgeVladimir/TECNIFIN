@@ -161,7 +161,7 @@ test('desactivar corta el token vigente; nadie se administra a si mismo; ADMIN n
   const baja = await llamar('/api/usuarios/cajero1', { metodo: 'PUT', token: tokenAdminA,
     cuerpo: { activo: false } });
   assert.equal(baja.estado, 200);
-  assert.deepEqual(baja.cuerpo, { login: 'cajero1', rol: 'TELLER', activo: false });
+  assert.deepEqual(baja.cuerpo, { login: 'cajero1', rol: 'TELLER', activo: false, correo: null });
   assert.equal((await llamar('/api/perfil', { token: tokenCajero })).estado, 401);
 
   assert.equal((await llamar('/api/usuarios/admin', { metodo: 'PUT', token: tokenAdminA,

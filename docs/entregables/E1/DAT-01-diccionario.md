@@ -7,11 +7,11 @@ No se edita a mano: si el esquema cambia, se vuelve a generar.
 
 | Indicador | Valor |
 |---|---|
-| Migraciones versionadas aplicadas | 15 |
-| Tablas en el esquema `tecnifin` | 41 |
-| Tablas con `cooperativa_id` (datos de una cooperativa) | 40 |
-| De ellas con seguridad por filas habilitada **y forzada** | 40 |
-| Políticas de seguridad por filas | 44 |
+| Migraciones versionadas aplicadas | 16 |
+| Tablas en el esquema `tecnifin` | 42 |
+| Tablas con `cooperativa_id` (datos de una cooperativa) | 41 |
+| De ellas con seguridad por filas habilitada **y forzada** | 41 |
+| Políticas de seguridad por filas | 45 |
 | Tablas de plataforma (sin `cooperativa_id`) | 1 |
 
 ## Índice
@@ -43,6 +43,7 @@ No se edita a mano: si el esquema cambia, se vuelve a generar.
 | [productos_financieros](#productos_financieros) | sí | sí | 1 |  |
 | [reclasificacion_cartera](#reclasificacion_cartera) | sí | sí | 1 | Corridas del proceso mensual de cartera. SIMULADO es el estado por defecto: aplicar es explicito. |
 | [reclasificacion_cartera_detalle](#reclasificacion_cartera_detalle) | sí | sí | 1 |  |
+| [recuperaciones_clave](#recuperaciones_clave) | sí | sí | 1 | Solicitudes de recuperacion de clave: solo el SHA-256 del token, un uso, con vencimiento. |
 | [rubros_creditos](#rubros_creditos) | sí | sí | 1 |  |
 | [secuencias_tenant](#secuencias_tenant) | sí | sí | 1 | Contadores por cooperativa (socio, cuenta, credito, solicitud, dpf_AAAAMM...). Reemplaza Seq_NumeroSocio y SecuenciaDPF. |
 | [socio_carga](#socio_carga) | sí | sí | 1 |  |
@@ -675,6 +676,28 @@ Corridas del proceso mensual de cartera. SIMULADO es el estado por defecto: apli
 - Clave foránea `fk_reclasificacion_cartera_detalle_proceso`: `FOREIGN KEY (cooperativa_id, proceso_id) REFERENCES reclasificacion_cartera(cooperativa_id, proceso_id) ON DELETE CASCADE`
 - Clave primaria `pk_reclasificacion_cartera_detalle`: `PRIMARY KEY (cooperativa_id, detalle_id)`
 
+## recuperaciones_clave
+
+Solicitudes de recuperacion de clave: solo el SHA-256 del token, un uso, con vencimiento.
+
+| Columna | Tipo | Obligatoria | Por defecto | Nota |
+|---|---|---|---|---|
+| cooperativa_id | integer | sí | cooperativa_actual() |  |
+| recuperacion_id | bigint | sí |  |  |
+| usuario_id | bigint | sí |  |  |
+| token_hash | character(64) | sí |  |  |
+| expira | timestamp(0) with time zone | sí |  |  |
+| consumida | timestamp(0) with time zone |  |  |  |
+| fecha_creacion | timestamp(0) with time zone | sí | now() |  |
+
+**Restricciones**
+
+- Verificación `ck_recuperaciones_clave_hash`: `CHECK ((token_hash ~ '^[0-9a-f]{64}$'::text))`
+- Verificación `ck_recuperaciones_clave_vigencia`: `CHECK ((expira > fecha_creacion))`
+- Clave foránea `fk_recuperaciones_clave_usuario`: `FOREIGN KEY (cooperativa_id, usuario_id) REFERENCES usuarios(cooperativa_id, usuario_id)`
+- Clave primaria `pk_recuperaciones_clave`: `PRIMARY KEY (cooperativa_id, recuperacion_id)`
+- Única `uq_recuperaciones_clave_token`: `UNIQUE (cooperativa_id, token_hash)`
+
 ## rubros_creditos
 
 | Columna | Tipo | Obligatoria | Por defecto | Nota |
@@ -1060,9 +1083,11 @@ Contadores por cooperativa (socio, cuenta, credito, solicitud, dpf_AAAAMM...). R
 | requiere_cambio_pin | boolean | sí | false |  |
 | fecha_creacion | timestamp(0) with time zone | sí | now() |  |
 | fecha_actualizacion | timestamp(0) with time zone | sí | now() |  |
+| correo | character varying(150) |  |  | Correo para recuperar la clave. Se guarda en minusculas. Sin correo no hay recuperacion por autoservicio. |
 
 **Restricciones**
 
+- Verificación `ck_usuarios_correo`: `CHECK (((correo IS NULL) OR (((correo)::text = lower((correo)::text)) AND ((correo)::text ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'::text))))`
 - Verificación `ck_usuarios_login`: `CHECK ((((login)::text = lower((login)::text)) AND ((login)::text ~ '^[a-z0-9._-]{3,20}$'::text)))`
 - Verificación `ck_usuarios_rol`: `CHECK (((rol)::text = ANY ((ARRAY['SUPER_USER'::character varying, 'ADMIN'::character varying, 'MANAGER'::character varying, 'CREDIT_OFFICER'::character varying, 'TELLER'::character varying, 'MEMBER'::character varying])::text[])))`
 - Clave foránea `fk_usuarios_cooperativa`: `FOREIGN KEY (cooperativa_id) REFERENCES cooperativas(cooperativa_id)`
