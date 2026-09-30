@@ -81,10 +81,17 @@ Estas decisiones **no se aprueban por silencio** y condicionan la confirmación 
 ## 6. Sitio web
 
 El sitio de la compañía se presenta **sin dominio**: el dominio y el hosting se contratan una vez inscrita la
-sociedad (cláusula 12.5, acuerdo del 29-sep). Por la cláusula 10.6, el sitio forma parte del trabajo adicional de
-igualación de Franklin Lechón (USD 4.100), por lo que su construcción y evidencia se coordinan con él. El bosquejo
-de estructura y contenido (4 páginas: Inicio, Producto, Nosotros, Contacto) está en la pestaña «Página Web» del
-tablero de avances.
+sociedad (cláusula 12.5, acuerdo del 29-sep).
+
+- **Fuente:** `web/` del repositorio (HTML y CSS estáticos, listos para subir a cualquier hosting).
+- **Vista previa para la revisión:** enlace privado de la vista previa, compartido por Jorge con el comité.
+- **Contenido:** Inicio, Producto, Nosotros y Contacto; marca GUTT (nombre reservado) y TECNIFIN como plataforma.
+  No nombra clientes ni afirma una calificación de la SEPS que aún no existe. El formulario de contacto se
+  conecta al correo de la compañía cuando haya dominio.
+- **Autoría (para la cláusula 10.6):** por indisposición de Franklin Lechón, el sitio lo construyó Jorge Tuquinga el
+  30-sep-2026 para cumplir el plazo del 15-oct. El comité debe decidir por acta cómo se tratan los USD 4.100 de
+  trabajo adicional de igualación de Franklin (otras actividades acordadas, o el mantenimiento y la publicación del
+  sitio), sin que este trabajo se cuente dos veces.
 
 ## 7. Cómo revisar (para el Jefe de Proyecto)
 

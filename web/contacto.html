@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contacto · GUTT</title>
+<meta name="description" content="Solicita una demostración de TECNIFIN para tu cooperativa.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="previa">Vista previa para revisión interna · sitio sin dominio publicado</div>
+<header class="cabecera">
+  <div class="marco">
+    <a class="marca" href="index.html"><span class="marca__sello">G</span><span><b>GUTT</b><span>Plataforma TECNIFIN</span></span></a>
+    <nav class="menu" aria-label="Principal">
+      <a href="index.html">Inicio</a>
+      <a href="producto.html">Producto</a>
+      <a href="nosotros.html">Nosotros</a>
+      <a href="contacto.html" aria-current="page">Contacto</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="portada">
+    <div class="marco" style="grid-template-columns:1fr">
+      <div>
+        <p class="antetitulo">Contacto</p>
+        <h1>Hablemos de tu cooperativa</h1>
+        <p class="entrada" style="margin-top:18px">Cuéntanos tu segmento y cómo operas hoy. Te respondemos con una propuesta de
+          demostración.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <div class="marco contacto">
+      <form class="formulario" id="formulario" novalidate>
+        <div class="campo"><label for="nombre">Nombre completo</label><input id="nombre" name="nombre" autocomplete="name" required></div>
+        <div class="campo"><label for="correo">Correo electrónico</label><input id="correo" name="correo" type="email" autocomplete="email" required></div>
+        <div class="campo"><label for="cooperativa">Cooperativa</label><input id="cooperativa" name="cooperativa" autocomplete="organization" required></div>
+        <div class="campo"><label for="segmento">Segmento SEPS</label>
+          <select id="segmento" name="segmento">
+            <option value="">Selecciona</option>
+            <option>Segmento 1</option><option>Segmento 2</option><option>Segmento 3</option>
+            <option>Segmento 4</option><option>Segmento 5</option><option>No lo sé</option>
+          </select></div>
+        <div class="campo"><label for="mensaje">Mensaje</label><textarea id="mensaje" name="mensaje"></textarea></div>
+        <button class="boton" type="submit">Enviar solicitud</button>
+        <p class="aviso" id="respuesta" hidden></p>
+      </form>
+      <div style="display:grid;gap:20px;min-width:0">
+        <dl class="datos">
+          <div><dt>Correo</dt><dd>Se habilita con el dominio de la compañía</dd></div>
+          <div><dt>Ubicación</dt><dd>Ecuador</dd></div>
+          <div><dt>Atención</dt><dd>Lunes a viernes</dd></div>
+        </dl>
+        <p class="aviso">Esta es una vista previa. El formulario se conecta al correo de la compañía cuando el sitio se publique
+          con su dominio.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="pie">
+  <div class="marco">
+    <span>© 2026 GUTT · Ecuador · sociedad en constitución</span>
+    <span>TECNIFIN es la plataforma de GUTT para cooperativas de ahorro y crédito</span>
+  </div>
+</footer>
+<script>
+  // Vista previa: valida y confirma en pantalla; no envia nada a ningun servidor.
+  document.getElementById('formulario').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var f = e.target, faltan = [];
+    ['nombre', 'correo', 'cooperativa'].forEach(function (id) { if (!f[id].value.trim()) faltan.push(f[id].labels[0].textContent); });
+    if (f.correo.value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.correo.value)) faltan.push('un correo válido');
+    var r = document.getElementById('respuesta');
+    r.hidden = false;
+    r.textContent = faltan.length
+      ? 'Completa: ' + faltan.join(', ') + '.'
+      : 'Solicitud lista. En esta vista previa no se envía: el envío se activa al publicar el sitio con su dominio.';
+  });
+</script>
+</body>
+</html>
