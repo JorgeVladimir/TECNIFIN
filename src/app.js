@@ -177,6 +177,26 @@ async function rutasPlazoFijo(dpf, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M6 (proceso de cartera SEPS).
+async function rutasCartera(cartera, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  const p = url.pathname;
+  if (req.method === 'GET' && p === '/api/cartera/clasificacion') {
+    return responder(res, 200, await cartera.consultar(tokenBearer(req), url.searchParams.get('fecha'), contexto), solicitudId);
+  }
+  if (req.method === 'POST' && p === '/api/cartera/procesos') {
+    const token = tokenBearer(req);
+    const cuerpo = await leerJson(req);
+    return responder(res, cuerpo.aplicar === true ? 201 : 200, await cartera.procesar(token, cuerpo, contexto), solicitudId);
+  }
+  const rev = /^\/api\/cartera\/procesos\/([0-9]{1,15})\/reversar$/.exec(p);
+  if (rev && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 200, await cartera.reversar(token, rev[1], await leerJson(req), contexto), solicitudId);
+  }
+  return undefined;
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -241,6 +261,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.cartera && /^\/api\/cartera(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasCartera(modulos.cartera, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       if (modulos.plazoFijo && /^\/api\/dpf(\/|$)/.test(url.pathname)) {

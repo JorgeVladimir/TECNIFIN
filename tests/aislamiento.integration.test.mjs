@@ -80,11 +80,11 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
             count(*) FILTER (WHERE NOT relforcerowsecurity)::int AS sin_force
        FROM pg_class
       WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'`, { dueno });
-  // 44 = las 40 de DAT-01/DAT-02, parametros_cooperativa y recuperaciones_clave (APP-01) descuentos_credito y pagos_credito (M3). Si cambia, se actualiza el
+  // 45 = las 40 de DAT-01/DAT-02, parametros_cooperativa y recuperaciones_clave (APP-01) descuentos_credito y pagos_credito (M3) y reclasificacion_cuota (M6). Si cambia, se actualiza el
   // inventario de ADR-0003 a la vez.
-  assert.deepEqual(catalogo.rows[0], { total: 44, ajenas: 0, sin_force: 0 },
+  assert.deepEqual(catalogo.rows[0], { total: 45, ajenas: 0, sin_force: 0 },
     'toda tabla del esquema es del dueno y lleva FORCE, sin excepciones');
-  assert.equal(tablas.length, 42, 'solo cooperativas y parametros_plataforma son de plataforma');
+  assert.equal(tablas.length, 43, 'solo cooperativas y parametros_plataforma son de plataforma');
 
   const rol = await admin.query(
     `SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = @rol`,
@@ -279,27 +279,21 @@ test('cambiar el tenant antes de ejecutar el trigger diferido no elude el cuadre
   );
 });
 
-test('una corrida aplicada exige asiento y provision contabilizada coherentes', async () => {
-  for (const caso of [
-    { asiento: null, provision: 100 },
-    { asiento: datosA.asientoId, provision: 0 },
-  ]) {
-    await assert.rejects(
-      withTenant(coopA.cooperativa_id, tx => tx.query(
-        `INSERT INTO tecnifin.reclasificacion_cartera
-           (fecha_corte, estado, usuario_id, asiento_id, provision_contabilizada)
-         VALUES (DATE '2026-10-31', 'APLICADO', @usuario, @asiento, @provision)`,
-        { usuario: datosA.usuarioId, ...caso })),
-      error => error.code === '23514'
-        && error.constraint === 'ck_reclasificacion_cartera_contabilizacion',
-    );
-  }
-
+test('una corrida exige coherencia entre asiento, provision y estado', async () => {
+  const insertar = (estado, asiento, provision) => withTenant(coopA.cooperativa_id, tx => tx.query(
+    `INSERT INTO tecnifin.reclasificacion_cartera (fecha_corte, estado, usuario_id, asiento_id, provision_contabilizada)
+     VALUES (DATE '2026-10-31', @estado, @usuario, @asiento, @provision)`,
+    { estado, usuario: datosA.usuarioId, asiento, provision }));
+  // Provision contabilizada sin asiento que la respalde: nunca.
+  await assert.rejects(insertar('APLICADO', null, 100),
+    error => error.code === '23514' && error.constraint === 'ck_reclasificacion_cartera_provision_asiento');
+  // Una simulacion no contabiliza nada.
+  await assert.rejects(insertar('SIMULADO', null, 100), error => error.code === '23514');
+  // Un mes solo con reclasificacion (asiento, provision 0) o con reversion de provision (negativa) es valido.
+  await insertar('APLICADO', datosA.asientoId, 0);
   await withTenant(coopA.cooperativa_id, tx => tx.query(
-    `INSERT INTO tecnifin.reclasificacion_cartera
-       (fecha_corte, estado, usuario_id, asiento_id, provision_contabilizada)
-     VALUES (DATE '2026-10-31', 'APLICADO', @usuario, @asiento, 100.00)`,
-    { usuario: datosA.usuarioId, asiento: datosA.asientoId }));
+    `DELETE FROM tecnifin.reclasificacion_cartera WHERE fecha_corte = DATE '2026-10-31'`));
+  await insertar('APLICADO', datosA.asientoId, -25.00);
 });
 
 // (v) Numeracion por cooperativa desde 1, atomica y sin huecos bajo concurrencia.
