@@ -10,6 +10,7 @@
 // exactamente el mismo contenido de negocio.
 import { altaCooperativa } from '../src/platform/semillas.js';
 import { cedulaDesdeBase } from '../src/platform/identificacion.js';
+import { bandasDesdePlan, CUENTA_INTERES, cuentaPorBanda, FAMILIA_CARTERA } from '../src/modules/creditos/calculo.js';
 
 export const COOPERATIVA_DEMO = {
   codigo: 'DEMO',
@@ -85,6 +86,9 @@ const CREDITOS = [
 ];
 
 const unica = async (tx, sql, params) => (await tx.query(sql, params)).rows[0];
+// Capital de las cuotas agrupado por subcuenta de cartera, en centavos exactos.
+const porCuenta = cuotas => [...cuotas.reduce((m, c) => m.set(c.cuenta, (m.get(c.cuenta) || 0) + Math.round(c.capital * 100)),
+  new Map())].map(([codigo, ct]) => [codigo, ct / 100]);
 
 async function crearUsuarios(tx, secretos) {
   const filas = await tx.query(
@@ -203,57 +207,70 @@ async function asentarTransaccion(tx, transaccionId, asiento) {
 async function crearContabilidad(tx) {
   const periodos = await tx.query(
     `INSERT INTO tecnifin.periodos_contables (anio, mes)
-     SELECT 2026, m FROM unnest(ARRAY[1, 8, 9]) AS m RETURNING periodo_id, mes`);
+     SELECT 2026, m FROM generate_series(1, 9) AS m RETURNING periodo_id, mes`);
+  // Cartera por vencer (1401..1404, por banda) e intereses (5104xx) con el mismo plan que usa M3.
   const cuentas = await tx.query(
-    `SELECT codigo, cuenta_contable_id FROM tecnifin.plan_cuentas
-      WHERE codigo IN ('110105','210135','210310','310305','140205','142210','149910','440210')`);
+    `SELECT codigo, nombre, cuenta_contable_id FROM tecnifin.plan_cuentas
+      WHERE codigo IN ('110105','210135','210310','310305','140205','142210','149910','440210')
+         OR (length(codigo) = 6 AND (codigo BETWEEN '1401' AND '1405' OR codigo LIKE '5104%'))`);
   return {
     periodos: Object.fromEntries(periodos.rows.map(f => [f.mes, f.periodo_id])),
     cuentas: Object.fromEntries(cuentas.rows.map(f => [f.codigo, f.cuenta_contable_id])),
+    bandas: bandasDesdePlan(cuentas.rows.filter(f => f.codigo < '1405' && f.codigo >= '1401')),
   };
 }
 
-async function crearCreditos(tx, { socios, usuarios, periodos, cuentas }) {
+// Igual que el desembolso de M3: cada cuota nace en la subcuenta por vencer de su segmento y
+// banda (dias del desembolso al vencimiento) y guarda esa cuenta; las cuotas ya pagadas se
+// contabilizan con su propio asiento. Asi el mayor de 1401..1428 cuadra al centavo con las
+// cuotas pendientes, que es lo que el proceso de cartera (M6) exige antes de aplicar.
+async function crearCreditos(tx, { socios, usuarios, periodos, cuentas, bandas }) {
   const resultado = [];
   for (const credito of CREDITOS) {
     const socio = socios[credito.socio];
     const cuotas = amortizacionFrancesa(credito.monto, credito.tasa, credito.cuotas);
     const pagado = cuotas.slice(0, credito.pagadas).reduce((s, c) => s + c.capital, 0);
     const saldo = Math.round((credito.monto - pagado) * 100) / 100;
+    const familia = FAMILIA_CARTERA[credito.segmento].POR_VENCER;
+    for (const c of cuotas) {
+      c.fecha = mesesDespues(credito.desembolso, c.numero);
+      c.cuenta = cuentaPorBanda(bandas, familia, diasEntre(credito.desembolso, c.fecha));
+    }
 
     const solicitud = await unica(tx,
       `INSERT INTO tecnifin.solicitudes_credito
          (codigo, socio_id, identificacion, monto, saldo, tasa, plazo, tipo, estado,
-          usuario_decision_id, fecha_decision)
+          usuario_decision_id, fecha_decision, segmento)
        VALUES (@codigo, @socio, @cedula, @monto, @saldo, @tasa, @plazo, @tipo, 'DESEMBOLSADO',
-               @usuario, @fecha::date) RETURNING solicitud_id`,
+               @usuario, @fecha::date, @segmento) RETURNING solicitud_id`,
       {
         codigo: credito.codigo.replace('CRED', 'SOL'), socio: socio.socioId, cedula: socio.cedula,
         monto: credito.monto, saldo, tasa: credito.tasa, plazo: credito.cuotas, tipo: credito.tipo,
-        usuario: usuarios['demo.credito'], fecha: credito.desembolso,
+        usuario: usuarios['demo.credito'], fecha: credito.desembolso, segmento: credito.segmento,
       });
 
     const fila = await unica(tx,
       `INSERT INTO tecnifin.creditos
          (codigo, solicitud_id, socio_id, monto, saldo, tasa, plazo, tipo, estado,
-          fecha_desembolso, fecha_vencimiento)
+          fecha_desembolso, fecha_vencimiento, segmento)
        VALUES (@codigo, @solicitud, @socio, @monto, @saldo, @tasa, @plazo, @tipo, 'VIGENTE',
-               @desembolso::date, @vencimiento::date) RETURNING credito_id`,
+               @desembolso::date, @vencimiento::date, @segmento) RETURNING credito_id`,
       {
         codigo: credito.codigo, solicitud: solicitud.solicitud_id, socio: socio.socioId,
         monto: credito.monto, saldo, tasa: credito.tasa, plazo: credito.cuotas, tipo: credito.tipo,
         desembolso: credito.desembolso, vencimiento: mesesDespues(credito.desembolso, credito.cuotas),
+        segmento: credito.segmento,
       });
 
     await tx.query(
       `INSERT INTO tecnifin.tabla_amortizacion
-         (credito_id, numero_cuota, fecha_pago, capital, interes, total, estado)
+         (credito_id, numero_cuota, fecha_pago, capital, interes, total, estado, cuenta_capital)
        SELECT @credito, * FROM unnest(@numeros::integer[], @fechas::date[], @capitales::numeric[],
-         @intereses::numeric[], @totales::numeric[], @estados::varchar[])`,
+         @intereses::numeric[], @totales::numeric[], @estados::varchar[], @cuentasCuota::varchar[])`,
       {
         credito: fila.credito_id,
         numeros: cuotas.map(c => c.numero),
-        fechas: cuotas.map(c => mesesDespues(credito.desembolso, c.numero)),
+        fechas: cuotas.map(c => c.fecha), cuentasCuota: cuotas.map(c => c.cuenta),
         capitales: cuotas.map(c => c.capital), intereses: cuotas.map(c => c.interes),
         totales: cuotas.map(c => c.total),
         estados: cuotas.map(c => c.numero <= credito.pagadas ? 'PAGADA' : 'PENDIENTE'),
@@ -263,8 +280,17 @@ async function crearCreditos(tx, { socios, usuarios, periodos, cuentas }) {
     await asentar(tx, {
       periodoId: periodos[mes], fecha: credito.desembolso, usuarioId: usuarios['demo.credito'],
       concepto: `Desembolso ${credito.codigo}`, origen: 'CREDITOS', origenId: credito.codigo, cuentas,
-      lineas: [['140205', 'D', credito.monto, socio.socioId], ['110105', 'H', credito.monto, null]],
+      lineas: [...porCuenta(cuotas).map(([codigo, valor]) => [codigo, 'D', valor, socio.socioId]),
+        ['110105', 'H', credito.monto, null]],
     });
+    for (const c of cuotas.slice(0, credito.pagadas)) {
+      await asentar(tx, {
+        periodoId: periodos[Number(c.fecha.slice(5, 7))], fecha: c.fecha, usuarioId: usuarios['demo.cajero'],
+        concepto: `Pago cuota ${c.numero} ${credito.codigo}`, origen: 'CREDITOS', origenId: credito.codigo, cuentas,
+        lineas: [['110105', 'D', c.total, null], [c.cuenta, 'H', c.capital, socio.socioId],
+          [CUENTA_INTERES[credito.segmento], 'H', c.interes, socio.socioId]],
+      });
+    }
 
     // Cuota mas antigua sin pagar: es lo que define la mora de la operacion.
     const primeraImpaga = cuotas[credito.pagadas];
@@ -329,8 +355,9 @@ async function crearPlazoFijo(tx, { socios, usuarios, periodos, cuentas, tasaDpf
   const socio = socios[3];
   const correlativo = await unica(tx, `SELECT tecnifin.siguiente_numero('dpf_202609') AS n`);
   const codigo = `DPF-202609-${String(correlativo.n).padStart(4, '0')}`;
-  // 5.50% nominal anual sobre 90 dias, base comercial de 360; retencion del 2%.
-  const interes = centavos(MONTO_DPF * 5.5 / 100 * 90 / 360);
+  // 5.50% nominal anual sobre 90 dias con la base del parametro dpf.base_dias (365, patron 07);
+  // con 360 la liquidacion pagaria distinto de lo proyectado. Retencion del 2%.
+  const interes = centavos(MONTO_DPF * 5.5 / 100 * 90 / 365);
   const retencion = centavos(interes * 0.02);
 
   const deposito = await unica(tx,
@@ -451,8 +478,8 @@ export async function construirDemo({ admin, withTenant, hash }) {
     const usuarios = await crearUsuarios(tx, secretos);
     const { productoId, tasaDpf } = await crearCatalogosPropios(tx, usuarios);
     const socios = await crearSocios(tx, productoId, secretos);
-    const { periodos, cuentas } = await crearContabilidad(tx);
-    const creditos = await crearCreditos(tx, { socios, usuarios, periodos, cuentas });
+    const { periodos, cuentas, bandas } = await crearContabilidad(tx);
+    const creditos = await crearCreditos(tx, { socios, usuarios, periodos, cuentas, bandas });
     const caja = await crearCaja(tx, { socios, usuarios, periodos, cuentas });
     const dpf = await crearPlazoFijo(tx, { socios, usuarios, periodos, cuentas, tasaDpf, ...caja });
     await crearCarteraSeps(tx, { creditos, usuarios });

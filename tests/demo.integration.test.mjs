@@ -134,6 +134,21 @@ test('los asientos de la demo cuadran y la numeracion arranca en 1 sin huecos', 
   for (const c of estado.capital) assert.equal(Number(c.capital), Number(c.monto));
 });
 
+test('el mayor de cartera cuadra con las cuotas pendientes, subcuenta por subcuenta', async () => {
+  // El proceso de cartera (M6) se niega a aplicar si no cuadra. La demo de antes de M3
+  // contabilizaba todo en 140205 y no asentaba las cuotas pagadas: 9000 contra 6111.74.
+  const descuadre = await withTenant(cooperativaId, tx => tx.query(
+    `WITH aux AS (SELECT t.cuenta_capital AS codigo, sum(t.capital) AS s
+                    FROM tecnifin.tabla_amortizacion t JOIN tecnifin.creditos c USING (cooperativa_id, credito_id)
+                   WHERE c.estado = 'VIGENTE' AND t.estado IN ('PENDIENTE', 'VENCIDA') GROUP BY 1),
+          mayor AS (SELECT pc.codigo, sum(CASE WHEN d.tipo_asiento = 'D' THEN d.valor ELSE -d.valor END) AS s
+                      FROM tecnifin.detalle_asiento d JOIN tecnifin.plan_cuentas pc USING (cooperativa_id, cuenta_contable_id)
+                     WHERE pc.codigo >= '1401' AND pc.codigo < '1429' GROUP BY 1)
+     SELECT coalesce(aux.codigo, mayor.codigo) AS codigo, aux.s::text AS auxiliar, mayor.s::text AS mayor
+       FROM aux FULL JOIN mayor USING (codigo) WHERE coalesce(aux.s, 0) <> coalesce(mayor.s, 0)`));
+  assert.deepEqual(descuadre.rows, []);
+});
+
 test('la cartera SEPS de la demo sale de los parametros sembrados, no de constantes', async () => {
   // El segmento de la operacion sale del tarifario (tasas_credito.clase_credito), que
   // usa el MISMO vocabulario que parametros_provision_cartera.segmento. Si el tarifario
