@@ -3,7 +3,7 @@
 **Modo:** NORMAL — Claude orquesta y ejecuta; Codex disponible para unidades repetibles.
 **Actualizado:** 2026-09-29 · **Fase:** 1 (arquitectura y núcleo multi-tenant) · **Entregable 1:** revisión el 15-oct-2026 (sistema y web, sin dominio) · **Hito H1:** confirmación del Jefe de Proyecto el 31-oct-2026 (contrato consolidado v2, 29-sep).
 
-## Hecho (último commit verde en main: ver git log; 78 pruebas, 16 migraciones)
+## Hecho (último commit verde en main: ver git log; 87 pruebas, 17 migraciones)
 - Fase 0: proyecto, reglas 1-14, pruebas de higiene, CI verde en GitHub (ejecución #1 sobre `953ee54`).
 - DAT-01: 31 tablas multi-tenant, RLS `FORCE`, `withTenant`, roles `tecnifin_admin`/`tecnifin_app`, numeración por cooperativa desde 1.
 - DAT-02: cartera SEPS, solvencia, tasas de crédito, banca en línea; semillas del Catálogo Único (994 cuentas, por cooperativa); base `tecnifin_demo`. 40 tablas, 42 políticas.
@@ -11,6 +11,7 @@
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 - APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
+- M1 patrón (30-sep): alta, búsqueda, ficha y apertura de cuenta; autenticador común (src/platform/autenticacion.js); PA6 provisional (0017, sin PIN en claro); 9 pruebas.
 - APP-01 recuperación de clave por correo y diagnóstico SMTP (30-sep, migración 0016, 7 pruebas).
 - Entregable 1 (30-sep): informe de avance, diccionario DAT-01 generado del catálogo y sitio web de 4 páginas.
 - APP-01 resto (29-sep): salud, perfil, cambio de clave, alta/rol/activo y restablecimiento de clave de usuarios; clave temporal obliga a cambiarla; 9 pruebas nuevas.

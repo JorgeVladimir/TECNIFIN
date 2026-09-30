@@ -2,27 +2,17 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { hashearClave, verificarClave } from '../../platform/credenciales.js';
 import { correoValido } from '../../platform/correo.js';
 import { ErrorAutenticacion } from '../../platform/jwt.js';
+import { ErrorCooperativaLogin } from '../../platform/tenant.js';
 import {
-  crearWithTenant, crearWithTenantPorCodigo, ErrorCooperativaLogin,
-} from '../../platform/tenant.js';
+  auditar, crearAutenticador, ErrorAutorizacion, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
+} from '../../platform/autenticacion.js';
 
-export class ErrorSolicitud extends Error {
-  constructor(message) { super(message); this.name = 'ErrorSolicitud'; this.statusCode = 400; }
-}
-export class ErrorAutorizacion extends Error {
-  constructor() { super('No autorizado'); this.name = 'ErrorAutorizacion'; this.statusCode = 403; }
-}
+export {
+  ErrorAutorizacion, ErrorCambioClavePendiente, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
+} from '../../platform/autenticacion.js';
+
 export class ErrorConfiguracion extends Error {
   constructor() { super('Configuracion de autenticacion incompleta'); this.name = 'ErrorConfiguracion'; this.statusCode = 503; }
-}
-export class ErrorNoEncontrado extends Error {
-  constructor() { super('No encontrado'); this.name = 'ErrorNoEncontrado'; this.statusCode = 404; }
-}
-export class ErrorConflicto extends Error {
-  constructor(message) { super(message); this.name = 'ErrorConflicto'; this.statusCode = 409; }
-}
-export class ErrorCambioClavePendiente extends Error {
-  constructor() { super('Debe cambiar su clave antes de continuar'); this.name = 'ErrorCambioClavePendiente'; this.statusCode = 403; }
 }
 
 const ROLES_ADMIN_USUARIOS = new Set(['SUPER_USER', 'ADMIN']);
@@ -73,12 +63,6 @@ function loginCanonico(valor) {
   return login;
 }
 
-async function auditar(tx, usuarioLogin, concepto, detalle) {
-  await tx.query(
-    `INSERT INTO tecnifin.auditoria_usuarios (usuario_login, concepto, detalle)
-     VALUES (@usuario, @concepto, @detalle)`, { usuario: usuarioLogin, concepto, detalle });
-}
-
 function vidaJwt(filas) {
   const valor = filas.find(fila => fila.clave === 'auth.jwt_vida_segundos')?.valor;
   const segundos = Number(valor);
@@ -90,8 +74,7 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
       || typeof jwt.emitir !== 'function' || typeof jwt.verificar !== 'function') {
     throw new TypeError('crearServicioPlataforma necesita db y jwt');
   }
-  const withTenant = crearWithTenant(db, { alertarDesvio: alertar });
-  const withTenantPorCodigo = crearWithTenantPorCodigo(db, withTenant);
+  const { withTenantPorCodigo, ejecutarAutenticado, conRoles } = crearAutenticador({ db, jwt, alertar });
   const hashFicticio = hashearClave('__usuario_inexistente__', randomUUID());
 
   async function login({ cooperativa, usuario, clave }, contexto = {}) {
@@ -139,35 +122,6 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
       usuario: { login: u.login, nombre: u.nombre_completo, rol: u.rol,
         requiereCambioPin: u.requiere_cambio_pin },
     };
-  }
-
-  async function ejecutarAutenticado(token, contexto, operacion, { permitirCambioPendiente = false } = {}) {
-    let claims;
-    try { claims = jwt.verificar(token); }
-    catch (error) {
-      await alertar({ tipo: 'TOKEN_RECHAZADO', solicitudId: contexto.solicitudId, motivo: 'jwt_invalido' });
-      throw error;
-    }
-    const resultado = await withTenant(claims.coop, async tx => {
-      const identidad = (await tx.query(
-        `SELECT u.usuario_id, u.login, u.nombre_completo, u.rol, u.activo, u.requiere_cambio_pin,
-                u.impresora_predeterminada, u.password_hash
-           FROM tecnifin.usuarios u
-           JOIN tecnifin.cooperativas c ON c.cooperativa_id = u.cooperativa_id
-          WHERE u.usuario_id = @usuario AND c.activa`, { usuario: claims.sub })).rows[0];
-      if (!identidad || !identidad.activo || identidad.login !== claims.login) {
-        await auditar(tx, claims.login, 'TOKEN_RECHAZADO', 'Identidad inactiva o sin pertenencia vigente.');
-        return { error: new ErrorAutenticacion() };
-      }
-      // Con clave temporal solo se puede ver el perfil y cambiar la clave: una clave que
-      // conoce el administrador no debe servir para operar.
-      if (identidad.requiere_cambio_pin && !permitirCambioPendiente) {
-        return { error: new ErrorCambioClavePendiente() };
-      }
-      return operacion(tx, identidad);
-    }, null, { solicitudId: contexto.solicitudId, usuarioLogin: claims.login });
-    if (resultado?.error) throw resultado.error;
-    return resultado;
   }
 
   async function listarUsuarios(token, contexto = {}) {
@@ -233,17 +187,9 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
     }, { permitirCambioPendiente: true });
   }
 
-  // Envoltura comun de la administracion de usuarios: lista blanca de roles y auditoria
-  // de la denegacion en la misma transaccion.
-  function comoAdministrador(token, contexto, concepto, operacion) {
-    return ejecutarAutenticado(token, contexto, async (tx, actor) => {
-      if (!ROLES_ADMIN_USUARIOS.has(actor.rol)) {
-        await auditar(tx, actor.login, `${concepto}_DENEGADO`, 'Intento sin rol autorizado.');
-        return { error: new ErrorAutorizacion() };
-      }
-      return operacion(tx, actor);
-    });
-  }
+  // Administracion de usuarios: lista blanca SUPER_USER/ADMIN, denegacion auditada.
+  const comoAdministrador = (token, contexto, concepto, operacion) =>
+    conRoles(token, contexto, ROLES_ADMIN_USUARIOS, concepto, operacion);
 
   async function buscarObjetivo(tx, actor, loginObjetivo, concepto) {
     const login = loginCanonico(loginObjetivo);

@@ -21,5 +21,7 @@
 5. ¿Quién más se conecta a la base y con qué rol?
 6. Acceso de soporte de TECNIFIN dentro de la cooperativa de un cliente (usuario nominal o rol de plataforma).
 7. Vida del token JWT, refresh e invalidación.
-8. **PA6 (seguridad, la más urgente):** `socios.pin` y `usuarios.pin` en claro; decidir antes de M1/M2.
+8. **PA6 (seguridad):** decisión provisional de Jorge (30-sep, migración 0017): se eliminaron `socios.pin` y
+   `usuarios.pin`; el PIN del socio vive solo derivado en `activacion_banca_linea.pin_hash`. Reversible (base en
+   blanco). **Christian debe confirmarlo o pedir otro tratamiento** (cláusula 6.3).
 9. PA10-PA13 (cartera): bandas de mora detectadas por el nombre de la cuenta, tipo de crédito sin FK al tarifario, rangos de provisión solapables, detalle de corrida editable.

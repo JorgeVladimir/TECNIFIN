@@ -11,6 +11,8 @@ function responder(res, estado, cuerpo, solicitudId) {
     'cache-control': 'no-store',
   });
   res.end(datos);
+  // true: la ruta ya respondio (los enrutadores de modulo devuelven undefined si no es suya).
+  return true;
 }
 
 async function leerJson(req) {
@@ -32,7 +34,31 @@ function tokenBearer(req) {
   return coincidencia[1];
 }
 
-export function crearAplicacion(servicio) {
+// Rutas de M1 (socios y cuentas). Devuelve undefined si la ruta no es de este modulo.
+async function rutasSocios(socios, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  if (url.pathname === '/api/socios') {
+    if (req.method === 'GET') {
+      return responder(res, 200, await socios.buscarSocios(tokenBearer(req), url.searchParams.get('q'), contexto), solicitudId);
+    }
+    if (req.method === 'POST') {
+      const token = tokenBearer(req);
+      return responder(res, 201, await socios.registrarSocio(token, await leerJson(req), contexto), solicitudId);
+    }
+  }
+  const ruta = /^\/api\/socios\/([0-9]{1,15})(\/cuentas)?$/.exec(url.pathname);
+  if (!ruta) return undefined;
+  if (!ruta[2] && req.method === 'GET') {
+    return responder(res, 200, await socios.fichaSocio(tokenBearer(req), ruta[1], contexto), solicitudId);
+  }
+  if (ruta[2] && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await socios.abrirCuenta(token, ruta[1], await leerJson(req), contexto), solicitudId);
+  }
+  return undefined;
+}
+
+export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
     const solicitudId = randomUUID();
@@ -93,6 +119,10 @@ export function crearAplicacion(servicio) {
       }
       if (req.method === 'GET' && url.pathname === '/api/configuracion') {
         return responder(res, 200, await servicio.leerConfiguracion(tokenBearer(req), contexto), solicitudId);
+      }
+      if (modulos.socios && url.pathname.startsWith('/api/socios')) {
+        const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
       }
       return responder(res, 404, { error: 'Ruta no encontrada' }, solicitudId);
     } catch (error) {

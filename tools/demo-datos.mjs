@@ -130,8 +130,8 @@ async function crearSocios(tx, productoId, secretos) {
     const socio = await unica(tx,
       `INSERT INTO tecnifin.socios
          (tipo_persona, tipo_identificacion, identificacion, primer_nombre, primer_apellido,
-          segundo_apellido, genero, pin, consentimiento_datos)
-       VALUES ('SOCIO', 'CEDULA', @cedula, @nombre, @apellido1, @apellido2, @genero, '0000', true)
+          segundo_apellido, genero, consentimiento_datos)
+       VALUES ('SOCIO', 'CEDULA', @cedula, @nombre, @apellido1, @apellido2, @genero, true)
        RETURNING socio_id, numero_socio, identificacion`,
       { cedula: s.cedula, nombre: s.nombre, apellido1: s.apellido1, apellido2: s.apellido2, genero: s.genero });
     const cuenta = await unica(tx,

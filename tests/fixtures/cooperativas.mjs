@@ -125,8 +125,8 @@ export async function sembrarCooperativa(withTenant, cooperativaId, etiqueta) {
 export async function crearSocio(tx, identificacion, etiqueta) {
   const filas = await tx.query(
     `INSERT INTO tecnifin.socios
-       (tipo_persona, tipo_identificacion, identificacion, primer_nombre, primer_apellido, pin)
-     VALUES ('SOCIO', 'CEDULA', @identificacion, 'PRUEBA', @apellido, '1234')
+       (tipo_persona, tipo_identificacion, identificacion, primer_nombre, primer_apellido)
+     VALUES ('SOCIO', 'CEDULA', @identificacion, 'PRUEBA', @apellido)
      RETURNING socio_id, numero_socio`,
     { identificacion, apellido: `PEREZ ${etiqueta}` });
   return filas.rows[0];

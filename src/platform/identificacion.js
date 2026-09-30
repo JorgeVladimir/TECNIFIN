@@ -28,6 +28,31 @@ export function esCedulaValida(cedula) {
   return digitoVerificadorCedula(cedula.slice(0, 9)) === Number(cedula[9]);
 }
 
+const provinciaValida = dos => { const p = Number(dos); return (p >= 1 && p <= 24) || p === 30; };
+
+// RUC: 13 digitos. Persona natural (tercer digito 0-5) = su cedula valida + establecimiento
+// distinto de 000. Sociedades publicas (6) y privadas (9): solo estructura -- el SRI ha
+// emitido RUC que no cumplen el modulo 11, y rechazar uno real es peor que no verificarlo.
+export function esRucValido(ruc) {
+  if (!/^[0-9]{13}$/.test(ruc || '') || !provinciaValida(ruc.slice(0, 2))) return false;
+  const tercero = Number(ruc[2]);
+  if (tercero <= 5) return esCedulaValida(ruc.slice(0, 10)) && ruc.slice(10) !== '000';
+  if (tercero === 6) return ruc.slice(9) !== '0000';
+  if (tercero === 9) return ruc.slice(10) !== '000';
+  return false;
+}
+
+export const TIPOS_IDENTIFICACION = new Set(['CEDULA', 'RUC', 'PASAPORTE']);
+
+// Canoniza y valida segun el tipo. Devuelve la identificacion lista para guardar o null.
+export function identificacionValida(tipo, valor) {
+  const limpio = String(valor || '').trim().toUpperCase();
+  if (tipo === 'CEDULA') return esCedulaValida(limpio) ? limpio : null;
+  if (tipo === 'RUC') return esRucValido(limpio) ? limpio : null;
+  if (tipo === 'PASAPORTE') return /^[A-Z0-9]{5,20}$/.test(limpio) ? limpio : null;
+  return null;
+}
+
 // Completa una base de 9 digitos con su verificador. Para la demo: la base la fija el
 // generador y el decimo digito lo pone el algoritmo, no una constante escrita a mano.
 export function cedulaDesdeBase(nueveDigitos) {
