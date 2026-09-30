@@ -12,12 +12,12 @@
 import {
   auditarProceso, crearAutenticador, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
+import { asentar as asentarComun, HOY } from '../../platform/contabilidad.js';
 
 const ROLES_CAJA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
 // La anulacion la hace un supervisor, no quien cobro: separacion de funciones.
 const ROLES_SUPERVISOR = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
 const TIPOS = { DEPOSITO: 'DEPOSITO_AHORROS', RETIRO: 'RETIRO_AHORROS' };
-const HOY = `(now() AT TIME ZONE 'America/Guayaquil')::date`;
 const CUENTA_EFECTIVO_DEFECTO = '110105';
 
 // Dinero de entrada: texto o numero con hasta 2 decimales, positivo, hasta 15 enteros.
@@ -77,46 +77,18 @@ export function crearServicioCaja({ db, jwt, alertar = async () => {} }) {
       { usuario: actor.usuario_id })).rows[0] || null;
   }
 
-  // Periodo contable del dia: se crea si no existe; si esta cerrado no se contabiliza nada.
-  async function periodoDelDia(tx) {
-    const fila = (await tx.query(
-      `SELECT periodo_id, cerrado FROM tecnifin.periodos_contables
-        WHERE anio = extract(year FROM ${HOY})::int AND mes = extract(month FROM ${HOY})::int`)).rows[0];
-    if (fila?.cerrado) throw new ErrorConflicto('El periodo contable del mes esta cerrado');
-    if (fila) return fila.periodo_id;
-    return (await tx.query(
-      `INSERT INTO tecnifin.periodos_contables (anio, mes)
-       VALUES (extract(year FROM ${HOY})::int, extract(month FROM ${HOY})::int)
-       ON CONFLICT (cooperativa_id, anio, mes) DO UPDATE SET cerrado = periodos_contables.cerrado
-       RETURNING periodo_id, cerrado`)).rows[0].periodo_id;
-  }
-
-  async function cuentaContable(tx, codigo) {
-    const fila = (await tx.query(
-      `SELECT cuenta_contable_id FROM tecnifin.plan_cuentas WHERE codigo = @codigo AND activa`, { codigo })).rows[0];
-    if (!fila) throw new ErrorConflicto(`La cuenta contable ${codigo} no existe o esta inactiva en el plan de cuentas`);
-    return fila.cuenta_contable_id;
-  }
-
+  // Codigo de la cuenta de efectivo: parametro de la cooperativa o 110105.
   async function cuentaEfectivo(tx) {
     const valor = (await tx.query(
       `SELECT valor FROM tecnifin.parametros_cooperativa WHERE clave = 'caja.cuenta_efectivo'`)).rows[0]?.valor;
-    return cuentaContable(tx, valor || CUENTA_EFECTIVO_DEFECTO);
+    return valor || CUENTA_EFECTIVO_DEFECTO;
   }
+  const cuentaContable = async (_tx, codigo) => codigo;
 
-  // Asiento de dos lineas (debe/haber del mismo valor) con origen CAJA.
-  async function asentar(tx, actor, { concepto, debe, haber, valor, socioId, origenId }) {
-    const periodo = await periodoDelDia(tx);
-    const asiento = (await tx.query(
-      `INSERT INTO tecnifin.asientos_contables (periodo_contable_id, fecha, tipo_documento, concepto, usuario_id, origen_modulo, origen_id)
-       VALUES (@periodo, ${HOY}, 'COMPROBANTE_CAJA', @concepto, @usuario, 'CAJA', @origen)
-       RETURNING asiento_id`,
-      { periodo, concepto, usuario: actor.usuario_id, origen: String(origenId) })).rows[0].asiento_id;
-    await tx.query(
-      `INSERT INTO tecnifin.detalle_asiento (asiento_id, cuenta_contable_id, tipo_asiento, valor, socio_id)
-       VALUES (@asiento, @debe, 'D', @valor::numeric, @socio), (@asiento, @haber, 'H', @valor::numeric, @socio)`,
-      { asiento, debe, haber, valor, socio: socioId });
-    return asiento;
+  // Asiento de dos lineas con origen CAJA, sobre la contabilidad comun.
+  function asentar(tx, actor, { concepto, debe, haber, valor, socioId, origenId }) {
+    return asentarComun(tx, actor, { concepto, origenModulo: 'CAJA', origenId, tipoDocumento: 'COMPROBANTE_CAJA',
+      lineas: [{ codigo: debe, tipo: 'D', valor, socioId }, { codigo: haber, tipo: 'H', valor, socioId }] });
   }
 
   async function abrirCaja(token, { saldoApertura, efectivo } = {}, contexto = {}) {

@@ -94,6 +94,9 @@ export async function sembrarCooperativa(withTenant, cooperativaId, etiqueta) {
           tasa_inicial, tasa_final, tasa_aplicable)
        VALUES (@linea, 'CONSUMO', 100.00, 20000.00, 3, 48, 14.0000, 16.0000, 15.0000)`,
       { linea: `CONSUMO ${etiqueta}` });
+    // M3: un descuento de desembolso por cooperativa.
+    await tx.query(`INSERT INTO tecnifin.descuentos_credito (codigo, nombre, porcentaje, cuenta_contable)
+       VALUES ('COMISION', 'Comision', 1.0, '529010')`);
     // Tablas de APP-01: configuracion por cooperativa y una recuperacion de clave pendiente.
     await tx.query(
       `INSERT INTO tecnifin.parametros_cooperativa (clave, valor) VALUES ('interfaz.etiqueta', @etiqueta)`,

@@ -105,6 +105,43 @@ async function rutasCaja(caja, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M3 (creditos).
+async function rutasCreditos(creditos, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  const p = url.pathname;
+  if (req.method === 'GET' && p === '/api/creditos/lineas') {
+    return responder(res, 200, await creditos.lineasCredito(tokenBearer(req), contexto), solicitudId);
+  }
+  if (req.method === 'POST' && p === '/api/creditos/simulacion') {
+    const token = tokenBearer(req);
+    return responder(res, 200, await creditos.simular(token, await leerJson(req), contexto), solicitudId);
+  }
+  if (req.method === 'POST' && p === '/api/creditos/solicitudes') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await creditos.crearSolicitud(token, await leerJson(req), contexto), solicitudId);
+  }
+  const sol = /^\/api\/creditos\/solicitudes\/(SOL-[0-9]{6,12})(?:\/(decision|desembolso))?$/i.exec(p);
+  if (sol) {
+    const [, codigo, accion] = sol;
+    if (!accion && req.method === 'GET') {
+      return responder(res, 200, await creditos.verSolicitud(tokenBearer(req), codigo, contexto), solicitudId);
+    }
+    if (accion && req.method === 'POST') {
+      const token = tokenBearer(req);
+      const cuerpo = await leerJson(req);
+      return accion.toLowerCase() === 'decision'
+        ? responder(res, 200, await creditos.decidir(token, codigo, cuerpo, contexto), solicitudId)
+        : responder(res, 201, await creditos.desembolsar(token, codigo, cuerpo, contexto), solicitudId);
+    }
+    return undefined;
+  }
+  const cred = /^\/api\/creditos\/(CRED-[0-9]{6,12})$/i.exec(p);
+  if (cred && req.method === 'GET') {
+    return responder(res, 200, await creditos.verCredito(tokenBearer(req), cred[1], contexto), solicitudId);
+  }
+  return undefined;
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -169,6 +206,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.creditos && /^\/api\/creditos(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasCreditos(modulos.creditos, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       if (modulos.caja && /^\/api\/caja(\/|$)/.test(url.pathname)) {

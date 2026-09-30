@@ -10,8 +10,8 @@
 | 5 | ~~M1 patrón~~ **HECHA 30-sep**: 4 endpoints, 87 pruebas | Claude | patrón 04 |
 | 6 | ~~M1 resto~~ **HECHA 30-sep**: 92 pruebas | Claude | patrón 04 §4 |
 | 7 | ~~M2 caja~~ **HECHA 30-sep**: 102 pruebas | Claude | patrón 05 |
-| 8 | **SIGUIENTE** Canal del socio: login, activación, transferencias | Claude | patrones 03 y 05 |
-| 9 | M3 créditos | Claude | por redactar |
+| 8 | Canal del socio: login, activación, transferencias (decidir autenticación con Christian) | Claude | patrones 03 y 05 |
+| 9 | M3 créditos parte 1 **HECHA 1-oct** (112 pruebas); **SIGUIENTE** parte 2: pago de cuota y anulación | Claude | patrón 06 |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.
 
