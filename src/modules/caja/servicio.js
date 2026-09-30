@@ -29,7 +29,7 @@ export function montoValido(valor, campo = 'monto') {
   return texto;
 }
 
-function efectivoValido(efectivo, campo = 'efectivo') {
+export function efectivoValido(efectivo, campo = 'efectivo') {
   if (efectivo === undefined || efectivo === null) return null;
   if (!Array.isArray(efectivo) || efectivo.length === 0 || efectivo.length > 20) {
     throw new ErrorSolicitud(`${campo}: entre 1 y 20 denominaciones`);
@@ -48,7 +48,7 @@ function efectivoValido(efectivo, campo = 'efectivo') {
 }
 
 // Total del efectivo calculado con los valores de LA BASE, no con lo que diga el cliente.
-async function totalEfectivo(tx, efectivo) {
+export async function totalEfectivo(tx, efectivo) {
   const filas = (await tx.query(
     `SELECT e.codigo, e.cantidad, d.valor, (d.valor * e.cantidad)::numeric(18,2) AS total
        FROM jsonb_to_recordset(@efectivo::jsonb) AS e(codigo text, cantidad integer)
@@ -62,20 +62,22 @@ async function totalEfectivo(tx, efectivo) {
 }
 
 // Igualdad de dinero en numeric, no en coma flotante.
-async function mismoValor(tx, a, b) {
+export async function mismoValor(tx, a, b) {
   return (await tx.query(`SELECT @a::numeric = @b::numeric AS igual`, { a, b })).rows[0].igual;
+}
+
+// Caja del dia del usuario, ABIERTA y bloqueada hasta el COMMIT (null si no hay).
+export async function cajaAbierta(tx, actor) {
+  return (await tx.query(
+    `SELECT control_id, saldo_apertura, fecha::text AS fecha FROM tecnifin.control_caja
+      WHERE usuario_id = @usuario AND fecha = ${HOY} AND estado = 'ABIERTO' FOR UPDATE`,
+    { usuario: actor.usuario_id })).rows[0] || null;
 }
 
 export function crearServicioCaja({ db, jwt, alertar = async () => {} }) {
   const { conRoles } = crearAutenticador({ db, jwt, alertar });
   const enCaja = (token, contexto, concepto, op) => conRoles(token, contexto, ROLES_CAJA, concepto, op);
 
-  async function cajaAbierta(tx, actor) {
-    return (await tx.query(
-      `SELECT control_id, saldo_apertura, fecha::text AS fecha FROM tecnifin.control_caja
-        WHERE usuario_id = @usuario AND fecha = ${HOY} AND estado = 'ABIERTO' FOR UPDATE`,
-      { usuario: actor.usuario_id })).rows[0] || null;
-  }
 
   // Codigo de la cuenta de efectivo: parametro de la cooperativa o 110105.
   async function cuentaEfectivo(tx) {
@@ -119,7 +121,7 @@ export function crearServicioCaja({ db, jwt, alertar = async () => {} }) {
     return (await tx.query(
       `SELECT count(*) FILTER (WHERE NOT anulado)::int AS operaciones,
               count(*) FILTER (WHERE anulado)::int AS anuladas,
-              coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion = 'DEPOSITO_AHORROS'), 0)::numeric(18,2)::text AS ingresos,
+              coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion IN ('DEPOSITO_AHORROS', 'PAGO_CREDITO')), 0)::numeric(18,2)::text AS ingresos,
               coalesce(sum(monto) FILTER (WHERE NOT anulado AND tipo_operacion = 'RETIRO_AHORROS'), 0)::numeric(18,2)::text AS egresos
          FROM tecnifin.transacciones_caja WHERE control_caja_id = @control`, { control: controlId })).rows[0];
   }

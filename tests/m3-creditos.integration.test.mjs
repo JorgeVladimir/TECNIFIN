@@ -212,3 +212,73 @@ test('la cooperativa B no ve solicitudes ni creditos de A', async () => {
   assert.equal((await llamar('/api/creditos/solicitudes/SOL-000001', { token: t.oficialB })).estado, 404);
   assert.equal((await llamar('/api/creditos/CRED-000001', { token: t.oficialB })).estado, 404);
 });
+
+const pagar = (token, cuerpo) => llamar('/api/creditos/CRED-000001/pagos', { metodo: 'POST', token, cuerpo });
+const anularPago = (token, n, motivo = 'Error de registro del pago') =>
+  llamar(`/api/creditos/pagos/${n}/anular`, { metodo: 'POST', token, cuerpo: { motivo } });
+
+test('pago por debito a la cuenta: capital desde su banda e interes a 510410', async () => {
+  const r = await pagar(t.caja, { origen: 'CUENTA', numeroCuenta: t.ahorro, cuotas: 1 });
+  assert.equal(r.estado, 201);
+  assert.deepEqual([r.cuerpo.pago, r.cuerpo.cuotas, r.cuerpo.capital, r.cuerpo.interes, r.cuerpo.total, r.cuerpo.saldoCredito],
+    [1, [1, 1], '466.55', '75.00', '541.55', '5533.45']);
+  const cuenta = await llamar(`/api/cuentas/${t.ahorro}`, { token: t.caja });
+  assert.equal(cuenta.cuerpo.saldo, '5338.45');
+  const libro = await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT pc.codigo, d.tipo_asiento, d.valor::text AS valor FROM tecnifin.pagos_credito p
+       JOIN tecnifin.detalle_asiento d ON d.asiento_id = p.asiento_id
+       JOIN tecnifin.plan_cuentas pc ON pc.cuenta_contable_id = d.cuenta_contable_id
+      WHERE p.numero_pago = 1 ORDER BY d.tipo_asiento, pc.codigo`));
+  assert.deepEqual(libro.rows.map(f => [f.codigo, f.tipo_asiento, f.valor]),
+    [['210135', 'D', '541.55'], ['140205', 'H', '466.55'], ['510410', 'H', '75.00']]);
+});
+
+test('pago por caja: efectivo verificado, comprobante de caja y entra al cuadre como ingreso', async () => {
+  assert.equal((await pagar(t.caja, { origen: 'CAJA', cuotas: 2, efectivo: [{ codigo: 'B100', cantidad: 1 }] })).estado, 400);
+  const antes = (await llamar('/api/caja', { token: t.caja })).cuerpo.ingresos;
+  const r = await pagar(t.caja, { origen: 'CAJA', cuotas: 2 });
+  assert.equal(r.estado, 201);
+  assert.deepEqual([r.cuerpo.pago, r.cuerpo.cuotas, r.cuerpo.total], [2, [2, 3], '1083.10']);
+  assert.ok(r.cuerpo.comprobante > 0);
+  const despues = (await llamar('/api/caja', { token: t.caja })).cuerpo.ingresos;
+  assert.equal((Number(despues) - Number(antes)).toFixed(2), '1083.10');
+  assert.equal((await pagar(t.oficial, { origen: 'CAJA', cuotas: 1 })).estado, 403, 'el oficial no cobra');
+});
+
+test('anulacion de pagos: supervisor, en orden inverso, y todo vuelve a su lugar', async () => {
+  assert.equal((await anularPago(t.caja, 2)).estado, 403, 'el cajero no anula');
+  assert.equal((await anularPago(t.gerente, 1)).estado, 409, 'hay un pago posterior vigente');
+  const a2 = await anularPago(t.gerente, 2);
+  assert.equal(a2.estado, 200);
+  assert.equal(a2.cuerpo.saldoCredito, '5533.45');
+  const a1 = await anularPago(t.gerente, 1);
+  assert.equal(a1.cuerpo.saldoCredito, '6000.00');
+  assert.equal((await llamar(`/api/cuentas/${t.ahorro}`, { token: t.caja })).cuerpo.saldo, '5880.00');
+  const cred = await llamar('/api/creditos/CRED-000001', { token: t.oficial });
+  assert.ok(cred.cuerpo.tabla.every(q => q.estado === 'PENDIENTE'));
+  const caja = await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT anulado FROM tecnifin.transacciones_caja WHERE tipo_operacion = 'PAGO_CREDITO'`));
+  assert.deepEqual(caja.rows, [{ anulado: true }]);
+  assert.equal((await anularPago(t.gerente, 2)).estado, 409, 'ya anulado');
+});
+
+test('pagar todas las cuotas cancela el credito y cierra la tabla', async () => {
+  assert.equal((await pagar(t.caja, { origen: 'CUENTA', numeroCuenta: t.ahorro, cuotas: 12 })).estado, 409, 'saldo insuficiente');
+  await llamar('/api/caja/transacciones', { metodo: 'POST', token: t.caja,
+    cuerpo: { numeroCuenta: t.ahorro, tipo: 'DEPOSITO', monto: '1000' } });
+  assert.equal((await pagar(t.caja, { origen: 'CUENTA', numeroCuenta: t.ahorro, cuotas: 13 })).estado, 409, 'solo quedan 12');
+  const r = await pagar(t.caja, { origen: 'CUENTA', numeroCuenta: t.ahorro, cuotas: 12 });
+  assert.equal(r.estado, 201);
+  assert.deepEqual([r.cuerpo.capital, r.cuerpo.saldoCredito, r.cuerpo.estadoCredito], ['6000.00', '0.00', 'CANCELADO']);
+  assert.equal((await pagar(t.caja, { origen: 'CUENTA', numeroCuenta: t.ahorro, cuotas: 1 })).estado, 409);
+});
+
+test('libro mayor de la cooperativa: todo cuadra y la cartera del credito quedo en cero', async () => {
+  const r = await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT (SELECT (sum(valor) FILTER (WHERE tipo_asiento = 'D') - sum(valor) FILTER (WHERE tipo_asiento = 'H'))::text
+               FROM tecnifin.detalle_asiento) AS descuadre,
+            (SELECT coalesce(sum(CASE WHEN d.tipo_asiento = 'D' THEN d.valor ELSE -d.valor END), 0)::text
+               FROM tecnifin.detalle_asiento d JOIN tecnifin.plan_cuentas pc ON pc.cuenta_contable_id = d.cuenta_contable_id
+              WHERE pc.codigo >= '1401' AND pc.codigo < '1429') AS cartera`));
+  assert.deepEqual(r.rows[0], { descuadre: '0.00', cartera: '0.00' });
+});

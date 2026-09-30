@@ -50,8 +50,22 @@ sin base viven en `src/modules/creditos/calculo.js`.
 | Seguro 0,08 %, SOLCA por cuota y 1,50 de gastos por cuota fijos en el codigo | Pendiente: rubros por cuota como datos (siguiente parte) |
 | Solo bloqueaba al `CREDIT_OFFICER`; cualquier otro rol aprobaba y desembolsaba | Lista blanca y separacion de funciones |
 
-## 4. Siguiente parte de M3
+## 4. Pago y anulacion de pago (parte 2, 1-oct-2026, migracion 0020)
 
-Pago de cuota (por caja o debito a la cuenta, con interes a la cuenta del segmento 5104xx y capital descargado de
-`cuenta_capital`), anulacion de pago, rubros por cuota como datos, cancelacion anticipada, scoring. Despues M6
-(cartera SEPS: vencimiento, no devenga, reclasificacion y provisiones) reutiliza `calculo.js`.
+| Endpoint | Rol | Efecto |
+|---|---|---|
+| `POST /api/creditos/:codigo/pagos` | `TELLER`, `MANAGER`, `ADMIN`, `SUPER_USER` | Las `cuotas` pendientes siguientes, completas y en orden; `origen` CAJA (efectivo verificado, comprobante de caja, entra al cuadre) o CUENTA (debito a una cuenta de ahorro del mismo socio) |
+| `POST /api/creditos/pagos/:numero/anular` | `MANAGER`, `ADMIN`, `SUPER_USER`, distinto de quien cobro | Solo del dia, solo el ultimo pago vigente del credito; si fue por caja, con la caja abierta |
+
+- Cada pago es un documento `pagos_credito` (numero por cooperativa, tramo de cuotas, capital, interes, origen,
+  asiento, anulacion con motivo/fecha/responsable). La cuota guarda `pago_id` para volver a PENDIENTE.
+- Asiento del pago: Debe efectivo (110105 o `caja.cuenta_efectivo`) o la cuenta del producto de ahorro; Haber el
+  capital de cada cuota a **su** `cuenta_capital` y el interes a la cuenta del segmento (5104: 05 comercial,
+  10 consumo, 15 vivienda, 20 microempresa). La anulacion es el asiento inverso.
+- Pagar la ultima cuota deja el credito `CANCELADO` con saldo 0; la prueba de libro mayor comprueba que la
+  cartera 1401..1428 del credito vuelve a cero.
+- El cierre de caja suma `PAGO_CREDITO` como ingreso.
+
+Pendiente de M3: pago parcial y cancelacion anticipada, interes de mora (tasa por dato), rubros por cuota
+(seguro, gastos) como datos, scoring. Luego M6 (cartera SEPS: vencimiento, no devenga, reclasificacion y
+provisiones) reutiliza `calculo.js` y `cuenta_capital`.

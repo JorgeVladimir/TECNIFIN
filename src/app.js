@@ -135,9 +135,18 @@ async function rutasCreditos(creditos, req, res, url, contexto) {
     }
     return undefined;
   }
-  const cred = /^\/api\/creditos\/(CRED-[0-9]{6,12})$/i.exec(p);
-  if (cred && req.method === 'GET') {
+  const cred = /^\/api\/creditos\/(CRED-[0-9]{6,12})(\/pagos)?$/i.exec(p);
+  if (cred && !cred[2] && req.method === 'GET') {
     return responder(res, 200, await creditos.verCredito(tokenBearer(req), cred[1], contexto), solicitudId);
+  }
+  if (cred && cred[2] && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await creditos.pagarCuotas(token, cred[1], await leerJson(req), contexto), solicitudId);
+  }
+  const anular = /^\/api\/creditos\/pagos\/([0-9]{1,15})\/anular$/.exec(p);
+  if (anular && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 200, await creditos.anularPago(token, anular[1], await leerJson(req), contexto), solicitudId);
   }
   return undefined;
 }

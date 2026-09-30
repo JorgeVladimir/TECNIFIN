@@ -10,12 +10,14 @@ import {
   auditarProceso, crearAutenticador, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
-import { montoValido } from '../caja/servicio.js';
+import { cajaAbierta, efectivoValido, mismoValor, montoValido, totalEfectivo } from '../caja/servicio.js';
 import {
-  amortizacionFrancesa, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
+  amortizacionFrancesa, bandasDesdePlan, CUENTA_INTERES, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
 } from './calculo.js';
 
 const ROLES_ANALISIS = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
+// Cobra quien opera caja (el pago por debito tambien lo registra ventanilla).
+const ROLES_COBRO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
 const ROLES_DECISION = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
 const CERTIFICADO_MINIMO_DEFECTO = '1.00';
 
@@ -292,5 +294,204 @@ export function crearServicioCreditos({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { lineasCredito, simular, crearSolicitud, verSolicitud, decidir, desembolsar, verCredito };
+  // Pago de las n cuotas pendientes siguientes, completas y en orden. Por caja (efectivo,
+  // entra al cuadre de la caja) o por debito a una cuenta de ahorro del socio. El capital se
+  // descarga de la misma subcuenta de banda donde se contabilizo cada cuota.
+  async function pagarCuotas(token, codigo, { cuotas = 1, origen = 'CAJA', numeroCuenta, efectivo } = {}, contexto = {}) {
+    const c = codigoValido(codigo, 'CRED');
+    const n = Number(cuotas);
+    if (!Number.isInteger(n) || n < 1 || n > 600) throw new ErrorSolicitud('cuotas debe ser un entero positivo');
+    const via = String(origen).toUpperCase();
+    if (!['CAJA', 'CUENTA'].includes(via)) throw new ErrorSolicitud('origen debe ser CAJA o CUENTA');
+    const detalle = via === 'CAJA' ? efectivoValido(efectivo) : null;
+
+    return conRoles(token, contexto, ROLES_COBRO, 'PAGO_CREDITO', async (tx, actor) => {
+      const cr = (await tx.query(
+        `SELECT credito_id, codigo, estado, socio_id, segmento FROM tecnifin.creditos WHERE codigo = @c FOR UPDATE`,
+        { c })).rows[0];
+      if (!cr) return { error: new ErrorNoEncontrado() };
+      if (cr.estado !== 'VIGENTE') throw new ErrorConflicto(`El credito esta ${cr.estado}`);
+      const pendientes = (await tx.query(
+        `SELECT amortizacion_id, numero_cuota, capital::text AS capital, interes::text AS interes, cuenta_capital
+           FROM tecnifin.tabla_amortizacion WHERE credito_id = @id AND estado IN ('PENDIENTE', 'VENCIDA')
+          ORDER BY numero_cuota LIMIT @n FOR UPDATE`, { id: cr.credito_id, n })).rows;
+      if (pendientes.length < n) throw new ErrorConflicto(`Solo quedan ${pendientes.length} cuota(s) por pagar`);
+      if (pendientes.some(q => !q.cuenta_capital)) throw new ErrorConflicto('El credito no tiene la cuenta contable de sus cuotas');
+      const suma = (await tx.query(
+        `SELECT sum(capital)::numeric(18,2)::text AS capital, sum(interes)::numeric(18,2)::text AS interes,
+                sum(capital + interes)::numeric(18,2)::text AS total
+           FROM jsonb_to_recordset(@q::jsonb) AS x(capital numeric, interes numeric)`,
+        { q: JSON.stringify(pendientes.map(q => ({ capital: q.capital, interes: q.interes }))) })).rows[0];
+
+      let cuentaDebito; let transaccionId = null; let cuentaId = null; let comprobante = null; let saldoCuenta = null;
+      if (via === 'CAJA') {
+        const control = await cajaAbierta(tx, actor);
+        if (!control) throw new ErrorConflicto('Abra su caja del dia antes de cobrar');
+        let filasEfectivo = [];
+        if (detalle) {
+          const { suma: contado, filas } = await totalEfectivo(tx, detalle);
+          if (!await mismoValor(tx, contado, suma.total)) throw new ErrorSolicitud(`El efectivo suma ${contado}, no ${suma.total}`);
+          filasEfectivo = filas;
+        }
+        const t = (await tx.query(
+          `INSERT INTO tecnifin.transacciones_caja (control_caja_id, socio_id, credito_id, tipo_operacion, monto, usuario_id, concepto)
+           VALUES (@control, @socio, @credito, 'PAGO_CREDITO', @total::numeric, @usuario, @concepto)
+           RETURNING transaccion_id, numero_comprobante`,
+          { control: control.control_id, socio: cr.socio_id, credito: cr.credito_id, total: suma.total,
+            usuario: actor.usuario_id, concepto: `Pago del credito ${c}` })).rows[0];
+        for (const f of filasEfectivo) {
+          await tx.query(
+            `INSERT INTO tecnifin.detalle_efectivo_transaccion (transaccion_id, codigo_denominacion, cantidad, total)
+             VALUES (@t, @codigo, @cantidad, @total::numeric)`,
+            { t: t.transaccion_id, codigo: f.codigo, cantidad: f.cantidad, total: f.total });
+        }
+        transaccionId = t.transaccion_id;
+        comprobante = Number(t.numero_comprobante);
+        cuentaDebito = (await tx.query(
+          `SELECT valor FROM tecnifin.parametros_cooperativa WHERE clave = 'caja.cuenta_efectivo'`)).rows[0]?.valor || '110105';
+      } else {
+        const nCuenta = Number(numeroCuenta);
+        if (!Number.isSafeInteger(nCuenta) || nCuenta < 1) throw new ErrorSolicitud('numeroCuenta invalido');
+        const cuenta = (await tx.query(
+          `SELECT c.cuenta_id, c.socio_id, c.estado, p.es_certificado, p.permite_debitos, p.cuenta_activa
+             FROM tecnifin.cuentas c
+             JOIN tecnifin.productos_financieros p ON p.cooperativa_id = c.cooperativa_id AND p.producto_id = c.producto_id
+            WHERE c.numero_cuenta = @n FOR UPDATE OF c`, { n: nCuenta })).rows[0];
+        if (!cuenta || String(cuenta.socio_id) !== String(cr.socio_id)) {
+          throw new ErrorConflicto('La cuenta de debito debe ser del mismo socio');
+        }
+        if (cuenta.estado !== 'ACTIVA' || cuenta.es_certificado || !cuenta.permite_debitos) {
+          throw new ErrorConflicto('La cuenta de debito debe ser de ahorro, activa y admitir debitos');
+        }
+        const upd = (await tx.query(
+          `UPDATE tecnifin.cuentas SET saldo = saldo - @total::numeric
+            WHERE cuenta_id = @id AND saldo - @total::numeric >= 0 RETURNING saldo::text AS saldo`,
+          { total: suma.total, id: cuenta.cuenta_id })).rows[0];
+        if (!upd) throw new ErrorConflicto('Saldo insuficiente en la cuenta');
+        cuentaId = cuenta.cuenta_id;
+        saldoCuenta = upd.saldo;
+        cuentaDebito = cuenta.cuenta_activa;
+      }
+
+      const desde = pendientes[0].numero_cuota;
+      const hasta = pendientes.at(-1).numero_cuota;
+      const glosa = `Pago del credito ${c}, cuotas ${desde} a ${hasta}`;
+      const asiento = await asentar(tx, actor, { concepto: glosa, origenModulo: 'CREDITOS', origenId: c,
+        tipoDocumento: 'PAGO_CREDITO', lineas: [
+          { codigo: cuentaDebito, tipo: 'D', valor: suma.total, socioId: cr.socio_id },
+          ...pendientes.map(q => ({ codigo: q.cuenta_capital, tipo: 'H', valor: q.capital, socioId: cr.socio_id })),
+          { codigo: CUENTA_INTERES[cr.segmento], tipo: 'H', valor: suma.interes, socioId: cr.socio_id },
+        ] });
+      if (transaccionId) {
+        await tx.query(`UPDATE tecnifin.transacciones_caja SET asiento_contable_id = @a WHERE transaccion_id = @t`,
+          { a: asiento, t: transaccionId });
+      } else {
+        await tx.query(
+          `INSERT INTO tecnifin.movimientos_cuenta (cuenta_id, tipo, monto, saldo_resultante, concepto, usuario_id, asiento_contable_id)
+           VALUES (@cuenta, 'TRANSFERENCIA_SALIDA', @total::numeric, @saldo::numeric, @concepto, @usuario, @a)`,
+          { cuenta: cuentaId, total: suma.total, saldo: saldoCuenta, concepto: glosa, usuario: actor.usuario_id, a: asiento });
+      }
+      const pago = (await tx.query(
+        `INSERT INTO tecnifin.pagos_credito (credito_id, cuota_desde, cuota_hasta, capital, interes, total, origen,
+                                            transaccion_caja_id, cuenta_id, asiento_id, usuario_id)
+         VALUES (@credito, @desde, @hasta, @capital::numeric, @interes::numeric, @total::numeric, @origen, @t, @cuenta, @a, @usuario)
+         RETURNING pago_id, numero_pago`,
+        { credito: cr.credito_id, desde, hasta, capital: suma.capital, interes: suma.interes, total: suma.total,
+          origen: via, t: transaccionId, cuenta: cuentaId, a: asiento, usuario: actor.usuario_id })).rows[0];
+      await tx.query(
+        `UPDATE tecnifin.tabla_amortizacion SET estado = 'PAGADA', interes_pagado = interes, pago_id = @pago
+          WHERE amortizacion_id = ANY(@ids::bigint[])`, { pago: pago.pago_id, ids: pendientes.map(q => q.amortizacion_id) });
+      const credito = (await tx.query(
+        `UPDATE tecnifin.creditos
+            SET saldo = saldo - @capital::numeric,
+                estado = CASE WHEN saldo - @capital::numeric = 0 THEN 'CANCELADO' ELSE estado END
+          WHERE credito_id = @id RETURNING saldo::text AS saldo, estado`,
+        { capital: suma.capital, id: cr.credito_id })).rows[0];
+      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'PAGAR', entidadTipo: 'CREDITO', entidadId: c,
+        campo: 'saldo', nuevo: credito.saldo, detalle: `Pago ${pago.numero_pago} por ${via}: ${suma.total}.` });
+      return { pago: Number(pago.numero_pago), credito: c, cuotas: [desde, hasta], capital: suma.capital,
+        interes: suma.interes, total: suma.total, origen: via, comprobante, saldoCredito: credito.saldo,
+        estadoCredito: credito.estado };
+    });
+  }
+
+  // Anulacion: supervisor distinto de quien cobro, en el dia, solo el ultimo pago vigente
+  // del credito (las cuotas vuelven en orden), con asiento contrario.
+  async function anularPago(token, numeroPago, { motivo } = {}, contexto = {}) {
+    const numero = Number(numeroPago);
+    if (!Number.isSafeInteger(numero) || numero < 1) throw new ErrorSolicitud('Pago invalido');
+    const razon = String(motivo || '').trim();
+    if (razon.length < 5 || razon.length > 300) throw new ErrorSolicitud('motivo: entre 5 y 300 caracteres');
+
+    return conRoles(token, contexto, ROLES_DECISION, 'ANULACION_PAGO', async (tx, actor) => {
+      const p = (await tx.query(
+        `SELECT p.*, p.capital::text AS capital_t, p.interes::text AS interes_t, p.total::text AS total_t,
+                (p.fecha AT TIME ZONE 'America/Guayaquil')::date = ${HOY} AS es_de_hoy,
+                cr.codigo, cr.socio_id, cr.segmento, cr.credito_id AS cid
+           FROM tecnifin.pagos_credito p
+           JOIN tecnifin.creditos cr ON cr.cooperativa_id = p.cooperativa_id AND cr.credito_id = p.credito_id
+          WHERE p.numero_pago = @n FOR UPDATE OF p, cr`, { n: numero })).rows[0];
+      if (!p) return { error: new ErrorNoEncontrado() };
+      if (p.anulado) throw new ErrorConflicto('El pago ya esta anulado');
+      if (!p.es_de_hoy) throw new ErrorConflicto('Solo se anula un pago del dia');
+      if (String(p.usuario_id) === String(actor.usuario_id)) throw new ErrorConflicto('Quien cobro no puede anular su propio pago');
+      const posterior = (await tx.query(
+        `SELECT 1 FROM tecnifin.pagos_credito WHERE credito_id = @c AND NOT anulado AND pago_id > @p`,
+        { c: p.cid, p: p.pago_id })).rows[0];
+      if (posterior) throw new ErrorConflicto('Anule primero los pagos posteriores del mismo credito');
+
+      const cuotas = (await tx.query(
+        `SELECT capital::text AS capital, cuenta_capital FROM tecnifin.tabla_amortizacion WHERE pago_id = @p`,
+        { p: p.pago_id })).rows;
+      let cuentaDebito;
+      if (p.origen === 'CAJA') {
+        const t = (await tx.query(
+          `SELECT t.transaccion_id, cc.estado FROM tecnifin.transacciones_caja t
+             JOIN tecnifin.control_caja cc ON cc.cooperativa_id = t.cooperativa_id AND cc.control_id = t.control_caja_id
+            WHERE t.transaccion_id = @t FOR UPDATE OF t`, { t: p.transaccion_caja_id })).rows[0];
+        if (t.estado !== 'ABIERTO') throw new ErrorConflicto('La caja que cobro ya esta cerrada');
+        await tx.query(
+          `UPDATE tecnifin.transacciones_caja SET anulado = true, motivo_anulacion = @m, fecha_anulacion = now(),
+                  usuario_anulacion_id = @u WHERE transaccion_id = @t`, { m: razon, u: actor.usuario_id, t: t.transaccion_id });
+        cuentaDebito = (await tx.query(
+          `SELECT valor FROM tecnifin.parametros_cooperativa WHERE clave = 'caja.cuenta_efectivo'`)).rows[0]?.valor || '110105';
+      } else {
+        const c = (await tx.query(
+          `UPDATE tecnifin.cuentas SET saldo = saldo + @total::numeric WHERE cuenta_id = @id
+            RETURNING saldo::text AS saldo, (SELECT cuenta_activa FROM tecnifin.productos_financieros pf
+                                               WHERE pf.cooperativa_id = cuentas.cooperativa_id AND pf.producto_id = cuentas.producto_id) AS cuenta_activa`,
+          { total: p.total_t, id: p.cuenta_id })).rows[0];
+        cuentaDebito = c.cuenta_activa;
+        p.saldoCuenta = c.saldo;
+      }
+      const glosa = `Anulacion del pago ${numero} del credito ${p.codigo}: ${razon}`;
+      const asiento = await asentar(tx, actor, { concepto: glosa, origenModulo: 'CREDITOS', origenId: p.codigo,
+        tipoDocumento: 'ANULACION_PAGO_CREDITO', lineas: [
+          ...cuotas.map(q => ({ codigo: q.cuenta_capital, tipo: 'D', valor: q.capital, socioId: p.socio_id })),
+          { codigo: CUENTA_INTERES[p.segmento], tipo: 'D', valor: p.interes_t, socioId: p.socio_id },
+          { codigo: cuentaDebito, tipo: 'H', valor: p.total_t, socioId: p.socio_id },
+        ] });
+      if (p.origen === 'CUENTA') {
+        await tx.query(
+          `INSERT INTO tecnifin.movimientos_cuenta (cuenta_id, tipo, monto, saldo_resultante, concepto, usuario_id, asiento_contable_id)
+           VALUES (@cuenta, 'AJUSTE', @total::numeric, @saldo::numeric, @concepto, @usuario, @a)`,
+          { cuenta: p.cuenta_id, total: p.total_t, saldo: p.saldoCuenta, concepto: glosa.slice(0, 200),
+            usuario: actor.usuario_id, a: asiento });
+      }
+      await tx.query(
+        `UPDATE tecnifin.tabla_amortizacion SET estado = 'PENDIENTE', interes_pagado = NULL, pago_id = NULL WHERE pago_id = @p`,
+        { p: p.pago_id });
+      await tx.query(
+        `UPDATE tecnifin.pagos_credito SET anulado = true, motivo_anulacion = @m, fecha_anulacion = now(), usuario_anulacion_id = @u
+          WHERE pago_id = @p`, { m: razon, u: actor.usuario_id, p: p.pago_id });
+      const credito = (await tx.query(
+        `UPDATE tecnifin.creditos SET saldo = saldo + @capital::numeric, estado = 'VIGENTE'
+          WHERE credito_id = @id RETURNING saldo::text AS saldo`, { capital: p.capital_t, id: p.cid })).rows[0];
+      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'ANULAR_PAGO', entidadTipo: 'PAGO_CREDITO',
+        entidadId: numero, detalle: razon });
+      return { pago: numero, anulado: true, credito: p.codigo, saldoCredito: credito.saldo };
+    });
+  }
+
+  return { lineasCredito, simular, crearSolicitud, verSolicitud, decidir, desembolsar, verCredito, pagarCuotas, anularPago };
 }
