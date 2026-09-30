@@ -197,6 +197,32 @@ async function rutasCartera(cartera, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M5 (contabilidad).
+async function rutasContabilidad(conta, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  const p = url.pathname;
+  const q = (k) => url.searchParams.get(k);
+  if (req.method === 'GET' && p === '/api/contabilidad/libro-diario') {
+    return responder(res, 200, await conta.libroDiario(tokenBearer(req), { desde: q('desde'), hasta: q('hasta'), pagina: q('pagina') }, contexto), solicitudId);
+  }
+  if (req.method === 'GET' && p === '/api/contabilidad/balance') {
+    return responder(res, 200, await conta.balanceComprobacion(tokenBearer(req), { hasta: q('hasta') }, contexto), solicitudId);
+  }
+  const mayor = /^\/api\/contabilidad\/mayor\/([0-9]{1,12})$/.exec(p);
+  if (mayor && req.method === 'GET') {
+    return responder(res, 200, await conta.mayor(tokenBearer(req), mayor[1], { desde: q('desde'), hasta: q('hasta') }, contexto), solicitudId);
+  }
+  if (req.method === 'POST' && p === '/api/contabilidad/asientos') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await conta.asientoManual(token, await leerJson(req), contexto), solicitudId);
+  }
+  const cierre = /^\/api\/contabilidad\/periodos\/([0-9]{4})\/([0-9]{1,2})\/cerrar$/.exec(p);
+  if (cierre && req.method === 'POST') {
+    return responder(res, 200, await conta.cerrarPeriodo(tokenBearer(req), cierre[1], cierre[2], contexto), solicitudId);
+  }
+  return undefined;
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -261,6 +287,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.contabilidad && /^\/api\/contabilidad(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasContabilidad(modulos.contabilidad, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       if (modulos.cartera && /^\/api\/cartera(\/|$)/.test(url.pathname)) {

@@ -14,7 +14,8 @@
 | 9 | M3 créditos partes 1 y 2 **HECHAS 1-oct** (117 pruebas) | Claude | patrón 06 |
 | 10 | ~~M4 plazo fijo~~ **HECHA 1-oct** (124 pruebas) | Claude | patrón 07 |
 | 11 | ~~M6 cartera SEPS~~ **HECHA 1-oct** (131 pruebas) | Claude | patrón 08 |
-| 12 | **SIGUIENTE** M5 contabilidad (balance, mayor) y M7 reportes SEPS | Claude | por redactar |
+| 12 | ~~M5 contabilidad~~ **HECHA 1-oct** (137 pruebas) | Claude | patrón 09 |
+| 13 | **SIGUIENTE** M7 reportes SEPS | Claude | patrones 08 y 09 |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.
 
