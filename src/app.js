@@ -195,6 +195,11 @@ async function rutasCartera(cartera, req, res, url, contexto) {
     const cuerpo = await leerJson(req);
     return responder(res, cuerpo.aplicar === true ? 201 : 200, await cartera.procesar(token, cuerpo, contexto), solicitudId);
   }
+  const castigo = /^\/api\/cartera\/castigos\/(CRED-[0-9]{6,12})$/i.exec(p);
+  if (castigo && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await cartera.castigar(token, castigo[1], await leerJson(req), contexto), solicitudId);
+  }
   const rev = /^\/api\/cartera\/procesos\/([0-9]{1,15})\/reversar$/.exec(p);
   if (rev && req.method === 'POST') {
     const token = tokenBearer(req);

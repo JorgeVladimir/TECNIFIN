@@ -332,5 +332,51 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { consultar, procesar, reversar };
+  // Castigo: baja de un credito vencido contra la provision constituida de su segmento. El
+  // capital sale de la subcuenta donde esta cada cuota; el control queda en cuentas de orden
+  // (710310 cartera castigada contra 7203xx del segmento) para su gestion de recuperacion.
+  async function castigar(token, codigo, { motivo } = {}, contexto = {}) {
+    const c = String(codigo || '').toUpperCase();
+    if (!/^CRED-[0-9]{6,12}$/.test(c)) throw new ErrorSolicitud('Codigo de credito invalido');
+    const razon = String(motivo || '').trim();
+    if (razon.length < 10 || razon.length > 500) throw new ErrorSolicitud('motivo: entre 10 y 500 caracteres');
+    return conRoles(token, contexto, ROLES_APLICA, 'CASTIGO_CARTERA', async (tx, actor) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext('cartera:' || tecnifin.cooperativa_actual()))`);
+      const cr = (await tx.query(
+        `SELECT credito_id, estado, segmento, socio_id FROM tecnifin.creditos WHERE codigo = @c FOR UPDATE`, { c })).rows[0];
+      if (!cr) return { error: new ErrorNoEncontrado() };
+      if (cr.estado !== 'VIGENTE') throw new ErrorConflicto(`El credito esta ${cr.estado}`);
+      const cuotas = (await tx.query(
+        `SELECT amortizacion_id, capital::text AS capital, cuenta_capital, fecha_pago < ${HOY} AS vencida
+           FROM tecnifin.tabla_amortizacion WHERE credito_id = @id AND estado IN ('PENDIENTE', 'VENCIDA')
+          ORDER BY numero_cuota FOR UPDATE`, { id: cr.credito_id })).rows;
+      if (!cuotas.some(q => q.vencida)) throw new ErrorConflicto('Solo se castiga cartera vencida');
+      const saldo = cuotas.reduce((s, q) => s + centavos(q.capital), 0);
+      const cuentaProvision = (await tx.query(
+        `SELECT cuenta_provision FROM tecnifin.parametros_provision_cartera WHERE segmento = @s AND activo LIMIT 1`,
+        { s: cr.segmento })).rows[0]?.cuenta_provision;
+      if (!cuentaProvision) throw new ErrorConflicto(`No hay cuenta de provision para ${cr.segmento}`);
+      const constituida = -((await saldosContables(tx, cuentaProvision, `${cuentaProvision}~`, '9999-12-31'))[cuentaProvision] || 0);
+      if (constituida < saldo) {
+        throw new ErrorConflicto(`La provision constituida (${aTexto(constituida)}) no cubre el saldo (${aTexto(saldo)}): corra el proceso de cartera`);
+      }
+      const orden = { COMERCIAL: '720305', CONSUMO: '720310', VIVIENDA: '720315', MICROEMPRESA: '720320' }[cr.segmento];
+      const total = aTexto(saldo);
+      const asiento = await asentar(tx, actor, { concepto: `Castigo del credito ${c}: ${razon}`.slice(0, 300),
+        origenModulo: 'CREDITOS', origenId: c, tipoDocumento: 'CASTIGO_CARTERA', lineas: [
+          { codigo: cuentaProvision, tipo: 'D', valor: total, socioId: cr.socio_id },
+          ...cuotas.map(q => ({ codigo: q.cuenta_capital, tipo: 'H', valor: q.capital, socioId: cr.socio_id })),
+          { codigo: '710310', tipo: 'D', valor: total, socioId: cr.socio_id },
+          { codigo: orden, tipo: 'H', valor: total, socioId: cr.socio_id },
+        ] });
+      await tx.query(`UPDATE tecnifin.tabla_amortizacion SET estado = 'CASTIGADA' WHERE amortizacion_id = ANY(@ids::bigint[])`,
+        { ids: cuotas.map(q => q.amortizacion_id) });
+      await tx.query(`UPDATE tecnifin.creditos SET estado = 'CASTIGADO' WHERE credito_id = @id`, { id: cr.credito_id });
+      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'CASTIGAR', entidadTipo: 'CREDITO', entidadId: c,
+        campo: 'estado', anterior: 'VIGENTE', nuevo: 'CASTIGADO', detalle: `${razon.slice(0, 400)} Saldo ${total}.` });
+      return { credito: c, estado: 'CASTIGADO', saldoCastigado: total, asiento: Number(asiento) };
+    });
+  }
+
+  return { consultar, procesar, reversar, castigar };
 }

@@ -57,7 +57,15 @@ calificaciones del corte eliminadas, proceso original `REVERSADO` y fila de reve
 aplicado; un mes con reversion de provision o solo con reclasificacion la violaba. Se reemplazo (0023, 0024) por:
 una simulacion no contabiliza nada, y una provision contabilizada distinta de cero exige asiento.
 
-## 7. Pendiente
+## 7. Castigo (1-oct-2026)
 
-Interes devengado y su reversion al pasar a no devenga, castigo (1499 contra 1421..1428 y cuentas de orden),
-refinanciados y reestructurados (1405..1408), proceso programado de fin de mes.
+`POST /api/cartera/castigos/:credito { motivo }` — supervisor, motivo de 10 a 500 caracteres. Solo un credito
+VIGENTE con cuotas vencidas y cuya provision constituida del segmento (1499xx) cubra el saldo; si no, 409 (corra
+el proceso de cartera). Asiento: D 1499xx / H cada cuota desde su `cuenta_capital`; control en cuentas de orden
+D 710310 (cartera castigada) / H 7203xx del segmento. Credito `CASTIGADO`, cuotas `CASTIGADA`; deja de ser
+cartera para la clasificacion y los reportes.
+
+## 8. Pendiente
+
+Recuperacion de cartera castigada (ingreso 560405 y reverso del control de orden), interes devengado y su
+reversion al pasar a no devenga, refinanciados y reestructurados (1405..1408), proceso programado de fin de mes.
