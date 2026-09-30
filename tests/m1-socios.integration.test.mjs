@@ -27,11 +27,11 @@ const CEDULA_1 = cedulaDesdeBase('170000011');
 const CEDULA_2 = cedulaDesdeBase('090000013');
 
 let app, admin, withTenant, servidor, baseUrl, creada = false;
-let coopA, coopB, tokenCajaA, tokenCajaB, tokenSocioA;
+let coopA, coopB, tokenCajaA, tokenCajaB, tokenSocioA, tokenGerenteA;
 
 async function preparar(cooperativa) {
   return withTenant(cooperativa.cooperativa_id, async tx => {
-    for (const [login, rol] of [['caja', 'TELLER'], ['socio.web', 'MEMBER']]) {
+    for (const [login, rol] of [['caja', 'TELLER'], ['socio.web', 'MEMBER'], ['gerente', 'MANAGER']]) {
       await tx.query(
         `INSERT INTO tecnifin.usuarios (login, nombre_completo, password_hash, rol)
          VALUES (@login, @nombre, @hash, @rol)`,
@@ -85,8 +85,8 @@ before(async () => {
   servidor = createServer(aplicacion);
   await new Promise(resolve => servidor.listen(0, '127.0.0.1', resolve));
   baseUrl = `http://127.0.0.1:${servidor.address().port}`;
-  [tokenCajaA, tokenCajaB, tokenSocioA] = await Promise.all([
-    entrar('COOP-A', 'caja'), entrar('COOP-B', 'caja'), entrar('COOP-A', 'socio.web')]);
+  [tokenCajaA, tokenCajaB, tokenSocioA, tokenGerenteA] = await Promise.all([
+    entrar('COOP-A', 'caja'), entrar('COOP-B', 'caja'), entrar('COOP-A', 'socio.web'), entrar('COOP-A', 'gerente')]);
 });
 
 after(async () => {
@@ -205,4 +205,92 @@ test('la base ya no tiene columnas de PIN en claro (PA6)', async () => {
     `SELECT table_name FROM information_schema.columns
       WHERE table_schema = 'tecnifin' AND column_name = 'pin'`);
   assert.deepEqual(columnas.rows, []);
+});
+
+const PNG_1X1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+test('actualizar perfil: cada campo cambiado queda auditado con anterior y nuevo', async () => {
+  const r = await llamar('/api/socios/1', { metodo: 'PUT', token: tokenCajaA,
+    cuerpo: { email: 'nuevo@correo.test', direccion: { domicilio: 'Calle Bolivar 12' } } });
+  assert.equal(r.estado, 200);
+  assert.deepEqual(r.cuerpo.actualizados.sort(), ['direccion_domicilio', 'email']);
+  const cambios = await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT campo_afectado, valor_anterior, valor_nuevo FROM tecnifin.auditoria_procesos
+      WHERE accion = 'ACTUALIZAR' ORDER BY auditoria_id`));
+  assert.deepEqual(cambios.rows, [
+    { campo_afectado: 'email', valor_anterior: 'maria.chimbo@correo.test', valor_nuevo: 'nuevo@correo.test' },
+    { campo_afectado: 'direccion_domicilio', valor_anterior: 'Av. Cevallos y Montalvo', valor_nuevo: 'Calle Bolivar 12' }]);
+  assert.equal((await llamar('/api/socios/1', { metodo: 'PUT', token: tokenCajaA,
+    cuerpo: { direccion: { identificacion: 'x' } } })).estado, 400);
+  assert.equal((await llamar('/api/socios/1', { metodo: 'PUT', token: tokenCajaA, cuerpo: {} })).estado, 400);
+});
+
+test('estado: solo gerencia, con motivo; no se retira un socio con saldo', async () => {
+  await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `UPDATE tecnifin.cuentas SET saldo = 25.00 WHERE numero_cuenta = 2`));
+  assert.equal((await llamar('/api/socios/1/estado', { metodo: 'PUT', token: tokenCajaA,
+    cuerpo: { estado: 'BLOQUEADO', motivo: 'Orden judicial 123' } })).estado, 403);
+  assert.equal((await llamar('/api/socios/1/estado', { metodo: 'PUT', token: tokenGerenteA,
+    cuerpo: { estado: 'INACTIVO', motivo: 'Retiro voluntario' } })).estado, 409);
+  assert.equal((await llamar('/api/socios/1/estado', { metodo: 'PUT', token: tokenGerenteA,
+    cuerpo: { estado: 'BLOQUEADO' } })).estado, 400, 'sin motivo');
+  const bloqueo = await llamar('/api/socios/1/estado', { metodo: 'PUT', token: tokenGerenteA,
+    cuerpo: { estado: 'BLOQUEADO', motivo: 'Orden judicial 123' } });
+  assert.deepEqual(bloqueo.cuerpo, { numeroSocio: 1, estado: 'BLOQUEADO' });
+  assert.equal((await llamar('/api/socios/1/cuentas', { metodo: 'POST', token: tokenCajaA,
+    cuerpo: { codigoProducto: 2 } })).estado, 409, 'un socio bloqueado no abre cuentas');
+  await llamar('/api/socios/1/estado', { metodo: 'PUT', token: tokenGerenteA,
+    cuerpo: { estado: 'ACTIVO', motivo: 'Levantamiento de la orden' } });
+});
+
+test('ubicacion: la imagen se valida por su firma real y se guarda en la base', async () => {
+  const ok = await llamar('/api/socios/1/ubicacion', { metodo: 'POST', token: tokenCajaA,
+    cuerpo: { mapa: { imagen: PNG_1X1, lat: -1.2491, lng: -78.6167, direccion: 'Ambato centro' },
+      croquis: { imagen: PNG_1X1, descripcion: 'Junto al mercado' } } });
+  assert.equal(ok.estado, 201);
+  assert.deepEqual(ok.cuerpo, { numeroSocio: 1, mapa: true, croquis: true });
+  const falsa = `data:image/png;base64,${Buffer.from('no soy una imagen').toString('base64')}`;
+  assert.equal((await llamar('/api/socios/1/ubicacion', { metodo: 'POST', token: tokenCajaA,
+    cuerpo: { croquis: { imagen: falsa } } })).estado, 400);
+  assert.equal((await llamar('/api/socios/1/ubicacion', { metodo: 'POST', token: tokenCajaA,
+    cuerpo: { mapa: { lat: 200 } } })).estado, 400);
+  const guardado = await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT coordenada_lat, length(imagen_mapa) AS bytes FROM tecnifin.socio_ubicacion_mapa`));
+  assert.deepEqual(guardado.rows, [{ coordenada_lat: '-1.249100', bytes: 68 }]);
+});
+
+test('un cuerpo de mas de 1,5 MB se rechaza sin procesarse', async () => {
+  const enorme = `data:image/png;base64,${'A'.repeat(1600 * 1024)}`;
+  const r = await llamar('/api/socios/1/ubicacion', { metodo: 'POST', token: tokenCajaA,
+    cuerpo: { croquis: { imagen: enorme } } });
+  assert.equal(r.estado, 413);
+});
+
+test('cuenta y movimientos: filtro por fecha de Ecuador, paginacion y dinero en texto', async () => {
+  await withTenant(coopA.cooperativa_id, async tx => {
+    const ids = (await tx.query(
+      `SELECT c.cuenta_id, u.usuario_id FROM tecnifin.cuentas c, tecnifin.usuarios u
+        WHERE c.numero_cuenta = 2 AND u.login = 'caja'`)).rows[0];
+    await tx.query(
+      `INSERT INTO tecnifin.movimientos_cuenta (cuenta_id, tipo, monto, saldo_resultante, concepto, fecha, usuario_id) VALUES
+        (@c, 'DEPOSITO', 20.00, 20.00, 'Deposito inicial', TIMESTAMPTZ '2026-10-01 09:00:00-05', @u),
+        (@c, 'DEPOSITO', 10.50, 30.50, 'Deposito', TIMESTAMPTZ '2026-10-02 23:30:00-05', @u),
+        (@c, 'RETIRO', 5.50, 25.00, 'Retiro', TIMESTAMPTZ '2026-10-03 08:00:00-05', @u)`,
+      { c: ids.cuenta_id, u: ids.usuario_id });
+  });
+  const cuenta = await llamar('/api/cuentas/2', { token: tokenCajaA });
+  assert.equal(cuenta.estado, 200);
+  assert.equal(cuenta.cuerpo.saldo, '25.00');
+  assert.equal(cuenta.cuerpo.socio.numeroSocio, 1);
+
+  const todos = await llamar('/api/cuentas/2/movimientos', { token: tokenCajaA });
+  assert.deepEqual(todos.cuerpo.movimientos.map(m => [m.tipo, m.monto, m.saldoResultante]),
+    [['RETIRO', '5.50', '25.00'], ['DEPOSITO', '10.50', '30.50'], ['DEPOSITO', '20.00', '20.00']]);
+  assert.equal(todos.cuerpo.hayMas, false);
+  assert.equal(todos.cuerpo.movimientos[1].fecha, '2026-10-02T23:30:00-05:00');
+  // 23:30 del 2 de octubre en Ecuador ya es 3 de octubre en UTC: el filtro usa la hora local.
+  const delDos = await llamar('/api/cuentas/2/movimientos?desde=2026-10-02&hasta=2026-10-02', { token: tokenCajaA });
+  assert.deepEqual(delDos.cuerpo.movimientos.map(m => m.monto), ['10.50']);
+  assert.equal((await llamar('/api/cuentas/2/movimientos?desde=ayer', { token: tokenCajaA })).estado, 400);
+  assert.equal((await llamar('/api/cuentas/2', { token: tokenCajaB })).estado, 404, 'B no tiene cuenta 2');
 });

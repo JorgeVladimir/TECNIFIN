@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 const MAX_CUERPO = 16 * 1024;
+// Solo las rutas que suben imagenes (mapa y croquis del socio) aceptan mas.
+const MAX_CUERPO_IMAGEN = 1536 * 1024;
 
 function responder(res, estado, cuerpo, solicitudId) {
   const datos = JSON.stringify(cuerpo);
@@ -15,12 +17,12 @@ function responder(res, estado, cuerpo, solicitudId) {
   return true;
 }
 
-async function leerJson(req) {
+async function leerJson(req, maximo = MAX_CUERPO) {
   let total = 0;
   const partes = [];
   for await (const parte of req) {
     total += parte.length;
-    if (total > MAX_CUERPO) throw Object.assign(new Error('Cuerpo demasiado grande'), { statusCode: 413 });
+    if (total > maximo) throw Object.assign(new Error('Cuerpo demasiado grande'), { statusCode: 413 });
     partes.push(parte);
   }
   try { return JSON.parse(Buffer.concat(partes).toString('utf8') || '{}'); }
@@ -46,14 +48,38 @@ async function rutasSocios(socios, req, res, url, contexto) {
       return responder(res, 201, await socios.registrarSocio(token, await leerJson(req), contexto), solicitudId);
     }
   }
-  const ruta = /^\/api\/socios\/([0-9]{1,15})(\/cuentas)?$/.exec(url.pathname);
-  if (!ruta) return undefined;
-  if (!ruta[2] && req.method === 'GET') {
-    return responder(res, 200, await socios.fichaSocio(tokenBearer(req), ruta[1], contexto), solicitudId);
+  // El token se valida ANTES de leer el cuerpo: nadie sin sesion hace leer 1,5 MB al servidor.
+  const socio = /^\/api\/socios\/([0-9]{1,15})(?:\/(cuentas|estado|ubicacion))?$/.exec(url.pathname);
+  if (socio) {
+    const [, numero, sub] = socio;
+    if (!sub && req.method === 'GET') {
+      return responder(res, 200, await socios.fichaSocio(tokenBearer(req), numero, contexto), solicitudId);
+    }
+    if (!sub && req.method === 'PUT') {
+      const token = tokenBearer(req);
+      return responder(res, 200, await socios.actualizarSocio(token, numero, await leerJson(req), contexto), solicitudId);
+    }
+    if (sub === 'cuentas' && req.method === 'POST') {
+      const token = tokenBearer(req);
+      return responder(res, 201, await socios.abrirCuenta(token, numero, await leerJson(req), contexto), solicitudId);
+    }
+    if (sub === 'estado' && req.method === 'PUT') {
+      const token = tokenBearer(req);
+      return responder(res, 200, await socios.cambiarEstadoSocio(token, numero, await leerJson(req), contexto), solicitudId);
+    }
+    if (sub === 'ubicacion' && req.method === 'POST') {
+      const token = tokenBearer(req);
+      return responder(res, 201,
+        await socios.guardarUbicacion(token, numero, await leerJson(req, MAX_CUERPO_IMAGEN), contexto), solicitudId);
+    }
+    return undefined;
   }
-  if (ruta[2] && req.method === 'POST') {
-    const token = tokenBearer(req);
-    return responder(res, 201, await socios.abrirCuenta(token, ruta[1], await leerJson(req), contexto), solicitudId);
+  const cuenta = /^\/api\/cuentas\/([0-9]{1,15})(\/movimientos)?$/.exec(url.pathname);
+  if (cuenta && req.method === 'GET') {
+    if (!cuenta[2]) return responder(res, 200, await socios.consultarCuenta(tokenBearer(req), cuenta[1], contexto), solicitudId);
+    const filtros = { desde: url.searchParams.get('desde'), hasta: url.searchParams.get('hasta'),
+      pagina: url.searchParams.get('pagina') };
+    return responder(res, 200, await socios.movimientosCuenta(tokenBearer(req), cuenta[1], filtros, contexto), solicitudId);
   }
   return undefined;
 }
@@ -120,13 +146,19 @@ export function crearAplicacion(servicio, modulos = {}) {
       if (req.method === 'GET' && url.pathname === '/api/configuracion') {
         return responder(res, 200, await servicio.leerConfiguracion(tokenBearer(req), contexto), solicitudId);
       }
-      if (modulos.socios && url.pathname.startsWith('/api/socios')) {
+      if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       return responder(res, 404, { error: 'Ruta no encontrada' }, solicitudId);
     } catch (error) {
       const estado = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      // Un 500 es un defecto nuestro: se registra con el id de solicitud (el mismo de la
+      // cabecera x-request-id), el tipo y el codigo; nunca el cuerpo ni el token.
+      if (estado >= 500) {
+        console.error(JSON.stringify({ nivel: 'ERROR', solicitudId, tipo: error?.name, codigo: error?.code,
+          mensaje: error?.message, pila: error?.stack?.split('\n').slice(1, 4).map(l => l.trim()) }));
+      }
       const mensaje = estado >= 500 && estado !== 503 ? 'Error interno' : error.message;
       return responder(res, estado, { error: mensaje }, solicitudId);
     }

@@ -46,6 +46,25 @@ function numeroPositivo(valor, campo) {
   return n;
 }
 
+// Imagen como data URL (PNG o JPEG). Se comprueba la firma real de los bytes, no solo lo
+// que declara el texto, y el tamano ya decodificado (maximo 1 MB).
+const FIRMAS = { 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff' };
+function imagenValida(valor, campo) {
+  const partes = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(String(valor || ''));
+  if (!partes) throw new ErrorSolicitud(`${campo} debe ser una imagen PNG o JPEG`);
+  const bytes = Buffer.from(partes[2], 'base64');
+  if (!bytes.length || bytes.length > 1024 * 1024) throw new ErrorSolicitud(`${campo}: maximo 1 MB`);
+  if (!bytes.toString('hex').startsWith(FIRMAS[partes[1]])) throw new ErrorSolicitud(`${campo} no es un ${partes[1]} valido`);
+  return bytes;
+}
+
+function coordenada(valor, limite, campo) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  const n = Number(valor);
+  if (!Number.isFinite(n) || Math.abs(n) > limite) throw new ErrorSolicitud(`${campo} invalida`);
+  return n.toFixed(6);
+}
+
 function lista(valor, campo, max) {
   if (valor === undefined || valor === null) return [];
   if (!Array.isArray(valor) || valor.length > max) throw new ErrorSolicitud(`${campo}: hasta ${max} elementos`);
@@ -143,6 +162,12 @@ async function insertar(tx, tabla, fila, extra = {}) {
 
 export function crearServicioSocios({ db, jwt, alertar = async () => {} }) {
   const { conRoles } = crearAutenticador({ db, jwt, alertar });
+  const fechaFiltro = (valor, campo) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(valor) || Number.isNaN(Date.parse(`${valor}T00:00:00Z`))) {
+      throw new ErrorSolicitud(`${campo} debe tener el formato AAAA-MM-DD`);
+    }
+    return valor;
+  };
   const atencion = (token, contexto, concepto, operacion) =>
     conRoles(token, contexto, ROLES_ATENCION, concepto, operacion);
 
@@ -265,5 +290,175 @@ export function crearServicioSocios({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { registrarSocio, buscarSocios, fichaSocio, abrirCuenta };
+  // Datos de contacto y perfil. Cada campo que cambia deja su propia fila de auditoria con el
+  // valor anterior y el nuevo: la ficha del socio es informacion regulada (UAF, SEPS).
+  async function actualizarSocio(token, numeroSocio, cambios = {}, contexto = {}) {
+    const numero = numeroPositivo(numeroSocio, 'numero de socio');
+    return atencion(token, contexto, 'CAMBIO_SOCIO', async (tx, actor) => {
+      const busqueda = await socioPorNumero(tx, numero);
+      if (busqueda.error) return busqueda;
+      const { socio } = busqueda;
+
+      const nuevos = {};
+      if (cambios.email !== undefined) {
+        const email = cambios.email ? String(cambios.email).trim().toLowerCase() : null;
+        if (email && !correoValido(email)) throw new ErrorSolicitud('Correo invalido');
+        nuevos.email = email;
+      }
+      if (cambios.telefono !== undefined) nuevos.telefono = telefono(cambios.telefono, 'telefono');
+      if (cambios.estadoCivil !== undefined) {
+        const ec = cambios.estadoCivil ? String(cambios.estadoCivil).toUpperCase() : null;
+        if (ec && !ESTADOS_CIVILES.has(ec)) throw new ErrorSolicitud('Estado civil invalido');
+        nuevos.estado_civil = ec;
+      }
+      if (cambios.profesion !== undefined) nuevos.profesion = texto(cambios.profesion, 'profesion', { max: 100, opcional: true });
+      if (cambios.nivelInstruccion !== undefined) {
+        nuevos.nivel_instruccion = texto(cambios.nivelInstruccion, 'nivelInstruccion', { max: 50, opcional: true });
+      }
+      const MAPA_DIRECCION = { domicilio: ['direccion_domicilio', 200], lugarTrabajo: ['lugar_trabajo', 200],
+        provinciaResidencia: ['provincia_residencia', 50], cantonResidencia: ['canton_residencia', 50],
+        parroquiaResidencia: ['parroquia_residencia', 50], provinciaTrabajo: ['provincia_trabajo', 50],
+        cantonTrabajo: ['canton_trabajo', 50], parroquiaTrabajo: ['parroquia_trabajo', 50] };
+      const direccion = {};
+      for (const [clave, valor] of Object.entries(cambios.direccion || {})) {
+        if (!MAPA_DIRECCION[clave]) throw new ErrorSolicitud(`direccion.${clave} no se puede cambiar aqui`);
+        const [columna, max] = MAPA_DIRECCION[clave];
+        direccion[columna] = texto(valor, `direccion.${clave}`, { max, opcional: true });
+      }
+      if (!Object.keys(nuevos).length && !Object.keys(direccion).length) throw new ErrorSolicitud('Nada que actualizar');
+
+      const registrar = (campo, anterior, nuevo) => (String(anterior ?? '') === String(nuevo ?? '') ? null
+        : auditarProceso(tx, actor, { proceso: 'SOCIOS', accion: 'ACTUALIZAR', entidadTipo: 'SOCIO',
+          entidadId: numero, campo, anterior, nuevo }));
+      for (const [columna, valor] of Object.entries(nuevos)) {
+        await tx.query(`UPDATE tecnifin.socios SET ${columna} = @valor WHERE socio_id = @id`,
+          { valor, id: socio.socio_id });
+        await registrar(columna, socio[columna], valor);
+      }
+      if (Object.keys(direccion).length) {
+        const previa = (await tx.query(`SELECT * FROM tecnifin.socio_direccion WHERE socio_id = @id`,
+          { id: socio.socio_id })).rows[0];
+        if (!previa) await insertar(tx, 'socio_direccion', direccion, { socio_id: socio.socio_id });
+        for (const [columna, valor] of Object.entries(direccion)) {
+          if (previa) {
+            await tx.query(`UPDATE tecnifin.socio_direccion SET ${columna} = @valor WHERE socio_id = @id`,
+              { valor, id: socio.socio_id });
+          }
+          await registrar(columna, previa?.[columna], valor);
+        }
+      }
+      return { numeroSocio: numero, actualizados: [...Object.keys(nuevos), ...Object.keys(direccion)] };
+    });
+  }
+
+  // Estado del socio: solo gerencia y administracion, con motivo. Un socio no se inactiva
+  // (retiro) mientras tenga saldo: primero se liquidan sus cuentas.
+  const ROLES_ESTADO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+  const ESTADOS_SOCIO = new Set(['ACTIVO', 'INACTIVO', 'BLOQUEADO', 'FALLECIDO']);
+  async function cambiarEstadoSocio(token, numeroSocio, { estado, motivo } = {}, contexto = {}) {
+    const numero = numeroPositivo(numeroSocio, 'numero de socio');
+    const nuevo = String(estado || '').toUpperCase();
+    if (!ESTADOS_SOCIO.has(nuevo)) throw new ErrorSolicitud('Estado invalido');
+    const razon = texto(motivo, 'motivo', { min: 5, max: 300 });
+    return conRoles(token, contexto, ROLES_ESTADO, 'ESTADO_SOCIO', async (tx, actor) => {
+      const busqueda = await socioPorNumero(tx, numero);
+      if (busqueda.error) return busqueda;
+      const { socio } = busqueda;
+      if (socio.estado === nuevo) throw new ErrorConflicto(`El socio ya esta ${nuevo}`);
+      if (nuevo === 'INACTIVO') {
+        const conSaldo = (await tx.query(
+          `SELECT count(*)::int AS n FROM tecnifin.cuentas WHERE socio_id = @id AND saldo <> 0`,
+          { id: socio.socio_id })).rows[0].n;
+        if (conSaldo) throw new ErrorConflicto(`El socio tiene ${conSaldo} cuenta(s) con saldo: liquidelas antes del retiro`);
+      }
+      await tx.query(`UPDATE tecnifin.socios SET estado = @estado WHERE socio_id = @id`,
+        { estado: nuevo, id: socio.socio_id });
+      await auditarProceso(tx, actor, { proceso: 'SOCIOS', accion: 'CAMBIAR_ESTADO', entidadTipo: 'SOCIO',
+        entidadId: numero, campo: 'estado', anterior: socio.estado, nuevo, detalle: razon });
+      return { numeroSocio: numero, estado: nuevo };
+    });
+  }
+
+  // Mapa del domicilio y croquis del trabajo. Cada captura es una fila nueva (queda el
+  // historial). Las imagenes van a la base, no al disco: con RLS y en los respaldos.
+  async function guardarUbicacion(token, numeroSocio, { mapa, croquis } = {}, contexto = {}) {
+    const numero = numeroPositivo(numeroSocio, 'numero de socio');
+    if (!mapa && !croquis) throw new ErrorSolicitud('Envie mapa o croquis');
+    const datosMapa = mapa ? {
+      imagen_mapa: mapa.imagen ? imagenValida(mapa.imagen, 'mapa.imagen') : null,
+      coordenada_lat: coordenada(mapa.lat, 90, 'mapa.lat'),
+      coordenada_lng: coordenada(mapa.lng, 180, 'mapa.lng'),
+      direccion_capturada: texto(mapa.direccion, 'mapa.direccion', { max: 200, opcional: true }),
+    } : null;
+    const datosCroquis = croquis ? {
+      imagen_croquis: imagenValida(croquis.imagen, 'croquis.imagen'),
+      descripcion: texto(croquis.descripcion, 'croquis.descripcion', { max: 500, opcional: true }),
+    } : null;
+    return atencion(token, contexto, 'UBICACION_SOCIO', async (tx, actor) => {
+      const busqueda = await socioPorNumero(tx, numero);
+      if (busqueda.error) return busqueda;
+      const ref = { socio_id: busqueda.socio.socio_id };
+      if (datosMapa) await insertar(tx, 'socio_ubicacion_mapa', datosMapa, ref);
+      if (datosCroquis) await insertar(tx, 'socio_croquis_trabajo', datosCroquis, ref);
+      await auditarProceso(tx, actor, { proceso: 'SOCIOS', accion: 'UBICACION', entidadTipo: 'SOCIO', entidadId: numero,
+        detalle: `Captura de ${[datosMapa && 'mapa', datosCroquis && 'croquis'].filter(Boolean).join(' y ')}.` });
+      return { numeroSocio: numero, mapa: Boolean(datosMapa), croquis: Boolean(datosCroquis) };
+    });
+  }
+
+  async function cuentaPorNumero(tx, numero) {
+    const cuenta = (await tx.query(
+      `SELECT c.cuenta_id, c.numero_cuenta, c.saldo, c.estado, c.fecha_apertura::text AS fecha_apertura,
+              p.nombre AS producto, p.codigo_producto, p.es_certificado,
+              s.numero_socio, s.primer_nombre, s.segundo_nombre, s.primer_apellido, s.segundo_apellido
+         FROM tecnifin.cuentas c
+         JOIN tecnifin.productos_financieros p ON p.cooperativa_id = c.cooperativa_id AND p.producto_id = c.producto_id
+         JOIN tecnifin.socios s ON s.cooperativa_id = c.cooperativa_id AND s.socio_id = c.socio_id
+        WHERE c.numero_cuenta = @numero`, { numero })).rows[0];
+    return cuenta ? { cuenta } : { error: new ErrorNoEncontrado() };
+  }
+
+  async function consultarCuenta(token, numeroCuenta, contexto = {}) {
+    const numero = numeroPositivo(numeroCuenta, 'numero de cuenta');
+    return atencion(token, contexto, 'CONSULTA_CUENTA', async (tx, actor) => {
+      const busqueda = await cuentaPorNumero(tx, numero);
+      if (busqueda.error) return busqueda;
+      const c = busqueda.cuenta;
+      await auditar(tx, actor.login, 'CONSULTA_CUENTA', `Cuenta ${numero}.`);
+      return { numeroCuenta: numero, producto: c.producto, codigoProducto: c.codigo_producto,
+        certificado: c.es_certificado, saldo: c.saldo, estado: c.estado, fechaApertura: c.fecha_apertura,
+        socio: { numeroSocio: Number(c.numero_socio), nombre: nombreCompleto(c) } };
+    });
+  }
+
+  const POR_PAGINA = 50;
+  async function movimientosCuenta(token, numeroCuenta, { desde, hasta, pagina } = {}, contexto = {}) {
+    const numero = numeroPositivo(numeroCuenta, 'numero de cuenta');
+    const inicio = desde ? fechaFiltro(desde, 'desde') : null;
+    const fin = hasta ? fechaFiltro(hasta, 'hasta') : null;
+    const numPagina = pagina ? numeroPositivo(pagina, 'pagina') : 1;
+    return atencion(token, contexto, 'CONSULTA_CUENTA', async (tx, actor) => {
+      const busqueda = await cuentaPorNumero(tx, numero);
+      if (busqueda.error) return busqueda;
+      // hasta es inclusivo: se compara contra el dia siguiente, en la zona de la cooperativa (Ecuador).
+      const filas = (await tx.query(
+        `SELECT tipo, monto, saldo_resultante, concepto,
+                to_char(fecha AT TIME ZONE 'America/Guayaquil', 'YYYY-MM-DD"T"HH24:MI:SS') || '-05:00' AS fecha_local
+           FROM tecnifin.movimientos_cuenta
+          WHERE cuenta_id = @cuenta
+            AND (@desde::date IS NULL OR fecha >= (@desde::date)::timestamp AT TIME ZONE 'America/Guayaquil')
+            AND (@hasta::date IS NULL OR fecha < (@hasta::date + 1)::timestamp AT TIME ZONE 'America/Guayaquil')
+          ORDER BY fecha DESC, movimiento_id DESC
+          LIMIT @limite OFFSET @salto`,
+        { cuenta: busqueda.cuenta.cuenta_id, desde: inicio, hasta: fin, limite: POR_PAGINA + 1,
+          salto: (numPagina - 1) * POR_PAGINA })).rows;
+      await auditar(tx, actor.login, 'CONSULTA_MOVIMIENTOS', `Cuenta ${numero}, pagina ${numPagina}.`);
+      return { numeroCuenta: numero, pagina: numPagina, hayMas: filas.length > POR_PAGINA,
+        movimientos: filas.slice(0, POR_PAGINA).map(m => ({ tipo: m.tipo, monto: m.monto,
+          saldoResultante: m.saldo_resultante, concepto: m.concepto, fecha: m.fecha_local })) };
+    });
+  }
+
+  return { registrarSocio, buscarSocios, fichaSocio, abrirCuenta, actualizarSocio, cambiarEstadoSocio,
+    guardarUbicacion, consultarCuenta, movimientosCuenta };
 }

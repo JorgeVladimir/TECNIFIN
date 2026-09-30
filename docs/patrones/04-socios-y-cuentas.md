@@ -47,12 +47,20 @@ modelo para M2 (caja), M3 (creditos) y M4 (plazo fijo).
 | El login del socio creaba cuentas como efecto colateral | La apertura es una operacion explicita y auditada |
 | Saldos como `FLOAT` | `numeric(18,2)` entregado como texto |
 
-## 4. Endpoints de M1 que repiten este patron
+## 4. Resto de M1 (hecho el 30-sep-2026)
 
-| Sistema anterior | Destino |
-|---|---|
-| `POST /api/socios/update-profile`, `update-report-profile` | `PUT /api/socios/:numero` (datos de contacto y perfil) |
-| `POST /api/socios/guardar-mapa`, `guardar-croquis` | `PUT /api/socios/:numero/ubicacion` (bytea en `socio_ubicacion_mapa`) |
-| `GET /api/socios/consultas`, `siguiente-numero` | Cubiertos por la busqueda; el numero lo asigna la base |
-| `GET /api/ahorros/resumen`, `/:cuentaId/movimientos` | `GET /api/cuentas/:numero` y `/movimientos` |
-| `POST /api/socios/verificar-email`, `aceptar-terminos`, `/api/auth/socio-login` | Canal del socio (banca en linea): superficie propia, con `activacion_banca_linea` |
+| Sistema anterior | TECNIFIN | Reglas |
+|---|---|---|
+| ,  |  | Lista cerrada de campos; una fila de auditoria por campo con anterior y nuevo |
+| (no existia) |  | Solo //, motivo obligatorio; no se inactiva con saldo; bloqueado no abre cuentas |
+| ,  |  | PNG/JPEG verificado por firma de bytes, maximo 1 MB, en la base; cuerpo hasta 1,5 MB solo en esta ruta |
+|  |  | Saldo en texto, socio titular |
+|  |  | Fechas en hora de Ecuador (UTC-5), 50 por pagina,  |
+| ,  | Cubiertos por la busqueda; el numero lo asigna la base | — |
+
+El driver entrega  como **texto**: la fecha se formatea en SQL
+(), nunca con  en Node.
+
+Queda para el **canal del socio** (superficie propia, con  y rol ):
+, ,  y  entre socios (este ultimo mueve dinero:
+se hace con M2 caja, que fija el patron del movimiento contable).

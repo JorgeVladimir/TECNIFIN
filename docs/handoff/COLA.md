@@ -8,8 +8,8 @@
 | 3 | ~~APP-01 patrón~~ **FUSIONADA 29-sep** APP-01 · 3 endpoints, migración 0015, patrón 03 y 62 pruebas | `arquitecto` | `encargos/app01-autenticacion-usuarios-auditoria.md` |
 | 4 | ~~APP-01 resto~~ **HECHA 29-sep (Claude)**: salud, perfil, cambiar-clave, alta/rol/activo, restablecer clave; 71 pruebas. Recuperación por correo + SMTP **HECHA 30-sep** (0016, 78 pruebas) | — | patrón 03 §5b |
 | 5 | ~~M1 patrón~~ **HECHA 30-sep**: 4 endpoints, 87 pruebas | Claude | patrón 04 |
-| 6 | **SIGUIENTE** M1 resto (patrón 04 §4) | Claude | patrón 04 |
-| 7 | M2 caja y ventanilla: patrón | Claude | por redactar |
+| 6 | ~~M1 resto~~ **HECHA 30-sep**: 92 pruebas | Claude | patrón 04 §4 |
+| 7 | **SIGUIENTE** M2 caja y ventanilla: patrón | Claude | patrón 05 |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.
 
