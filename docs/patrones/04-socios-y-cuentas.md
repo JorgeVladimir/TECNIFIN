@@ -51,16 +51,16 @@ modelo para M2 (caja), M3 (creditos) y M4 (plazo fijo).
 
 | Sistema anterior | TECNIFIN | Reglas |
 |---|---|---|
-| ,  |  | Lista cerrada de campos; una fila de auditoria por campo con anterior y nuevo |
-| (no existia) |  | Solo //, motivo obligatorio; no se inactiva con saldo; bloqueado no abre cuentas |
-| ,  |  | PNG/JPEG verificado por firma de bytes, maximo 1 MB, en la base; cuerpo hasta 1,5 MB solo en esta ruta |
-|  |  | Saldo en texto, socio titular |
-|  |  | Fechas en hora de Ecuador (UTC-5), 50 por pagina,  |
-| ,  | Cubiertos por la busqueda; el numero lo asigna la base | — |
+| `update-profile`, `update-report-profile` | `PUT /api/socios/:numero` | Lista cerrada de campos; una fila de auditoria por campo con anterior y nuevo |
+| (no existia) | `PUT /api/socios/:numero/estado` | Solo `MANAGER`/`ADMIN`/`SUPER_USER`, motivo obligatorio; no se inactiva con saldo; bloqueado no abre cuentas |
+| `guardar-mapa`, `guardar-croquis` | `POST /api/socios/:numero/ubicacion` | PNG/JPEG verificado por firma de bytes, maximo 1 MB, en la base; cuerpo hasta 1,5 MB solo en esta ruta |
+| `/api/ahorros/resumen` | `GET /api/cuentas/:numero` | Saldo en texto, socio titular |
+| `/api/ahorros/:cuentaId/movimientos` | `GET /api/cuentas/:numero/movimientos?desde&hasta&pagina` | Fechas en hora de Ecuador (UTC-5), 50 por pagina, `hayMas` |
+| `consultas`, `siguiente-numero` | Cubiertos por la busqueda; el numero lo asigna la base | — |
 
-El driver entrega  como **texto**: la fecha se formatea en SQL
-(), nunca con  en Node.
+El driver entrega `timestamptz` como **texto**: la fecha se formatea en SQL
+(`to_char(fecha AT TIME ZONE 'America/Guayaquil', ...) || '-05:00'`), nunca con `toISOString()` en Node.
 
-Queda para el **canal del socio** (superficie propia, con  y rol ):
-, ,  y  entre socios (este ultimo mueve dinero:
+Queda para el **canal del socio** (superficie propia, con `activacion_banca_linea` y rol `MEMBER`):
+`socio-login`, `verificar-email`, `aceptar-terminos` y `transferir` entre socios (este ultimo mueve dinero:
 se hace con M2 caja, que fija el patron del movimiento contable).
