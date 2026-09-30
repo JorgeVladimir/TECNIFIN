@@ -12,7 +12,9 @@
 | 7 | ~~M2 caja~~ **HECHA 30-sep**: 102 pruebas | Claude | patrón 05 |
 | 8 | Canal del socio: login, activación, transferencias (decidir autenticación con Christian) | Claude | patrones 03 y 05 |
 | 9 | M3 créditos partes 1 y 2 **HECHAS 1-oct** (117 pruebas) | Claude | patrón 06 |
-| 10 | **SIGUIENTE** M4 plazo fijo (apertura, interés, cancelación, renovación) | Claude | patrones 05 y 06 |
+| 10 | ~~M4 plazo fijo~~ **HECHA 1-oct** (124 pruebas) | Claude | patrón 07 |
+| 11 | **SIGUIENTE** M6 cartera SEPS: vencimiento, no devenga, reclasificación, provisiones | Claude | patrón 06 + carteraSeps.js |
+| 12 | M5 contabilidad (balance, mayor) y M7 reportes SEPS | Claude | por redactar |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.
 

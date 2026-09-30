@@ -151,6 +151,32 @@ async function rutasCreditos(creditos, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M4 (plazo fijo).
+async function rutasPlazoFijo(dpf, req, res, url, contexto) {
+  const { solicitudId } = contexto;
+  const p = url.pathname;
+  if (req.method === 'GET' && p === '/api/dpf/tramos') return responder(res, 200, await dpf.tramos(tokenBearer(req), contexto), solicitudId);
+  if (req.method === 'POST' && (p === '/api/dpf/simulacion' || p === '/api/dpf')) {
+    const token = tokenBearer(req);
+    const cuerpo = await leerJson(req);
+    return p === '/api/dpf'
+      ? responder(res, 201, await dpf.abrir(token, cuerpo, contexto), solicitudId)
+      : responder(res, 200, await dpf.simular(token, cuerpo, contexto), solicitudId);
+  }
+  const m = /^\/api\/dpf\/(DPF-[0-9]{6}-[0-9]{4,8})(?:\/(liquidar|cancelar|renovar))?$/i.exec(p);
+  if (!m) return undefined;
+  const [, codigo, accion] = m;
+  if (!accion && req.method === 'GET') return responder(res, 200, await dpf.ver(tokenBearer(req), codigo, contexto), solicitudId);
+  if (accion && req.method === 'POST') {
+    const token = tokenBearer(req);
+    const cuerpo = await leerJson(req);
+    if (accion === 'liquidar') return responder(res, 200, await dpf.liquidar(token, codigo, contexto), solicitudId);
+    if (accion === 'cancelar') return responder(res, 200, await dpf.cancelar(token, codigo, cuerpo, contexto), solicitudId);
+    return responder(res, 201, await dpf.renovar(token, codigo, cuerpo, contexto), solicitudId);
+  }
+  return undefined;
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -215,6 +241,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.plazoFijo && /^\/api\/dpf(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasPlazoFijo(modulos.plazoFijo, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       if (modulos.creditos && /^\/api\/creditos(\/|$)/.test(url.pathname)) {

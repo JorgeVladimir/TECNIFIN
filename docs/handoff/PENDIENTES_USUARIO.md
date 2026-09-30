@@ -25,3 +25,7 @@
    `usuarios.pin`; el PIN del socio vive solo derivado en `activacion_banca_linea.pin_hash`. Reversible (base en
    blanco). **Christian debe confirmarlo o pedir otro tratamiento** (cláusula 6.3).
 9. PA10-PA13 (cartera): bandas de mora detectadas por el nombre de la cuenta, tipo de crédito sin FK al tarifario, rangos de provisión solapables, detalle de corrida editable.
+
+## Contador (nuevo, 1-oct)
+1. DPF: validar la retención (hoy 2 %) y la base de días del interés (hoy 365). Son parámetros por cooperativa (dpf.retencion_pct, dpf.base_dias).
+2. Créditos: confirmar cuentas de los descuentos al desembolso (comisión 529010, fondo 330105, SOLCA 250490; la 25049005 del sistema anterior no existe en el catálogo).
