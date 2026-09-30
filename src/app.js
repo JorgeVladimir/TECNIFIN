@@ -223,6 +223,23 @@ async function rutasContabilidad(conta, req, res, url, contexto) {
   return undefined;
 }
 
+// Rutas de M7 (reportes SEPS). El balance de comprobacion es /api/contabilidad/balance (M5).
+async function rutasReportes(reportes, req, res, url, contexto) {
+  const m = /^\/api\/reportes\/(esf|perlas|b11|uaf|situacion-general|solvencia)$/.exec(url.pathname);
+  if (!m || req.method !== 'GET') return undefined;
+  const token = tokenBearer(req);
+  const fecha = url.searchParams.get('fecha');
+  const r = {
+    esf: () => reportes.esf(token, fecha, contexto),
+    perlas: () => reportes.perlas(token, fecha, contexto),
+    b11: () => reportes.b11(token, fecha, contexto),
+    uaf: () => reportes.uaf(token, url.searchParams.get('periodo'), contexto),
+    'situacion-general': () => reportes.situacionGeneral(token, contexto),
+    solvencia: () => reportes.solvencia(token, fecha, contexto),
+  }[m[1]];
+  return responder(res, 200, await r(), contexto.solicitudId);
+}
+
 export function crearAplicacion(servicio, modulos = {}) {
   if (!servicio) throw new TypeError('crearAplicacion necesita un servicio');
   return async function aplicacion(req, res) {
@@ -287,6 +304,10 @@ export function crearAplicacion(servicio, modulos = {}) {
       }
       if (modulos.socios && /^\/api\/(socios|cuentas)(\/|$)/.test(url.pathname)) {
         const respuesta = await rutasSocios(modulos.socios, req, res, url, contexto);
+        if (respuesta !== undefined) return respuesta;
+      }
+      if (modulos.reportes && /^\/api\/reportes(\/|$)/.test(url.pathname)) {
+        const respuesta = await rutasReportes(modulos.reportes, req, res, url, contexto);
         if (respuesta !== undefined) return respuesta;
       }
       if (modulos.contabilidad && /^\/api\/contabilidad(\/|$)/.test(url.pathname)) {

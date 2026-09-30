@@ -11,6 +11,7 @@ import { crearServicioCreditos } from './modules/creditos/servicio.js';
 import { crearServicioPlazoFijo } from './modules/plazo_fijo/servicio.js';
 import { crearServicioCartera } from './modules/cartera/servicio.js';
 import { crearServicioContabilidad } from './modules/contabilidad/servicio.js';
+import { crearServicioReportes } from './modules/reportes/servicio.js';
 
 const puerto = Number(process.env.TECNIFIN_PORT || 3000);
 if (!Number.isInteger(puerto) || puerto < 1 || puerto > 65535) throw new Error('TECNIFIN_PORT invalido');
@@ -27,7 +28,8 @@ const creditos = crearServicioCreditos({ db, jwt, alertar });
 const plazoFijo = crearServicioPlazoFijo({ db, jwt, alertar });
 const cartera = crearServicioCartera({ db, jwt, alertar });
 const contabilidad = crearServicioContabilidad({ db, jwt, alertar });
-const servidor = createServer(crearAplicacion(servicio, { socios, caja, creditos, plazoFijo, cartera, contabilidad }));
+const reportes = crearServicioReportes({ db, jwt, alertar });
+const servidor = createServer(crearAplicacion(servicio, { socios, caja, creditos, plazoFijo, cartera, contabilidad, reportes }));
 
 servidor.listen(puerto, '127.0.0.1', () => console.log(`TECNIFIN escucha en 127.0.0.1:${puerto}`));
 

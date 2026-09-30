@@ -70,6 +70,7 @@ export async function clasificar(tx, fechaCorte) {
 
   const movimientos = [];
   const porCuenta = {};
+  const operacionesPorCuenta = {};
   const provisiones = {};
   const detalle = [];
   for (const op of operaciones.values()) {
@@ -84,6 +85,7 @@ export async function clasificar(tx, fechaCorte) {
       const estadoNuevo = dias > 0 ? 'VENCIDA' : 'PENDIENTE';
       const capital = centavos(q.capital);
       porCuenta[destino] = (porCuenta[destino] || 0) + capital;
+      (operacionesPorCuenta[destino] ??= new Set()).add(op.codigo);
       if (destino !== q.cuenta_capital || estadoNuevo !== q.estado) {
         movimientos.push({ amortizacionId: q.amortizacion_id, credito: op.codigo, cuota: q.numero_cuota,
           origen: q.cuenta_capital, destino, estadoAnterior: q.estado, estadoNuevo, capital });
@@ -110,6 +112,7 @@ export async function clasificar(tx, fechaCorte) {
   const improductiva = suma(c => esFamilia(c, 'NO_DEVENGA') || esFamilia(c, 'VENCIDA'));
   return {
     fechaCorte, operaciones: detalle, movimientos, porCuenta, provisiones: Object.values(provisiones),
+    operacionesPorCuenta: Object.fromEntries(Object.entries(operacionesPorCuenta).map(([k, v]) => [k, v.size])),
     totales: {
       operaciones: operaciones.size, carteraBruta: bruta, porVencer: suma(c => esFamilia(c, 'POR_VENCER')),
       noDevenga: suma(c => esFamilia(c, 'NO_DEVENGA')), vencida: suma(c => esFamilia(c, 'VENCIDA')), improductiva,
