@@ -1,7 +1,7 @@
 # ADR-0002: aislamiento de datos entre cooperativas
 
 - **Estado:** propuesta
-- **Entregable:** ARQ-01 (hito H1, acta 30-oct-2026)
+- **Entregable:** ARQ-01 (hito H1, acta 31-oct-2026)
 - **Capas afectadas:** base de datos / infraestructura y seguridad / aplicación
 - **Revisión requerida:** Desarrollo, y **obligatoriamente** Infraestructura y Seguridad (Christian Cuenca):
   toca aislamiento, seguridad, disponibilidad, respaldo, recuperación y capacidad — los cinco supuestos de la

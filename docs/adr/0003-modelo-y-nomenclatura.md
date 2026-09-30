@@ -1,7 +1,7 @@
 # ADR-0003: modelo de datos, tipos y nomenclatura
 
 - **Estado:** propuesta
-- **Entregable:** ARQ-01 / DAT-01 (hito H1, acta 30-oct-2026)
+- **Entregable:** ARQ-01 / DAT-01 (hito H1, acta 31-oct-2026)
 - **Capas afectadas:** base de datos / aplicación
 - **Revisión requerida:** Desarrollo. Infraestructura y Seguridad (Christian Cuenca) **sí** para los puntos que
   tocan capacidad y respaldo: los binarios en la base (§ Preguntas abiertas) y los nombres de roles y esquemas

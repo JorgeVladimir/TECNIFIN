@@ -81,7 +81,7 @@ Secretos: todo en `.env` (fuera de Git). Este archivo se commitea: **cero creden
 ## Estado
 
 Fase 0 (creación del proyecto) en curso. Primer hito: **H1**, modelo de base multi-tenant en PostgreSQL,
-aceptado por acta el **30-oct-2026**.
+aceptado por acta el **31-oct-2026**.
 
 **DAT-01 y DAT-02 construidos** (borrador, pendiente de acta): 14 migraciones en `db/migrations/`,
 **40 tablas** (38 de negocio + 2 de plataforma) con `FORCE ROW LEVEL SECURITY` sin excepciones, **42 políticas

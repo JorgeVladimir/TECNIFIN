@@ -2,7 +2,7 @@
 
 - **Estado:** BORRADOR (semana 1 de H1, adelantado). No aprobado.
 - **Entregable contractual:** ARQ-01, hito **H1** — modelo de base de datos multi-tenant en PostgreSQL,
-  acta de aceptación **30-oct-2026**
+  acta de aceptación **31-oct-2026**
 - **Apartados:** los que exige la cláusula 6.1 del contrato
 - **Revisión requerida:** Desarrollo, y **revisión expresa de Christian Cuenca** (Jefe de Proyecto ·
   Infraestructura y Seguridad) por los apartados 6, 9, 12, 13 y 14 — cláusula 6.3: **nunca se aprueba por
@@ -27,7 +27,7 @@
 ahorro y crédito** reguladas por la SEPS sobre **un solo servidor PostgreSQL 18 y un solo backend Node.js**,
 con aislamiento de datos garantizado por el motor y no por la disciplina de quien escribe las consultas.
 
-**Dentro del alcance de H1 (1 → 30-oct-2026):**
+**Dentro del alcance de H1 (1 → 31-oct-2026):**
 
 - Modelo de multi-tenencia: identificación del tenant, aislamiento, modelo de datos y nomenclatura (apartados 4-8).
 - El DDL de las **30 tablas** de `db/gutt_system/01-09` traducido a `db/migrations/` (DAT-01, semana 2).
@@ -342,7 +342,7 @@ Del plan, más lo que estos tres ADR agregan:
 - [ ] `npm test` de TECNIFIN en verde en CI; `npm test` de **GUTT_SYSTEM sigue en verde (55 pruebas)**: prueba
       de que el legado no se tocó.
 - [ ] Línea base de rendimiento registrada en este documento (apartado 13).
-- [ ] Este documento y ARQ-02 aprobados en el acta del **30-oct-2026**.
+- [ ] Este documento y ARQ-02 aprobados en el acta del **31-oct-2026**.
 
 ## 18. Preguntas abiertas
 

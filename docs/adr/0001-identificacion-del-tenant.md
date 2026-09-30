@@ -1,7 +1,7 @@
 # ADR-0001: identificación del tenant
 
 - **Estado:** propuesta
-- **Entregable:** ARQ-01 (hito H1, acta 30-oct-2026)
+- **Entregable:** ARQ-01 (hito H1, acta 31-oct-2026)
 - **Capas afectadas:** aplicación / base de datos / infraestructura y seguridad
 - **Revisión requerida:** Desarrollo, y además Infraestructura y Seguridad (Christian Cuenca): toca aislamiento
   y seguridad (cláusula 6.3 del contrato: nunca se aprueba por silencio)
