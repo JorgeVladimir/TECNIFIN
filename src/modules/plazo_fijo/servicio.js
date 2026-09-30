@@ -15,10 +15,12 @@ import {
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { montoValido } from '../caja/servicio.js';
+import { crearPagoIntereses, DIAS_PERIODO, pagadoDe } from './intereses.js';
 
 const ROLES_OPERACION = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
 const ROLES_SUPERVISOR = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
 const RENOVACION = new Set(['NO_RENOVAR', 'AUTOMATICO', 'MANUAL']);
+const MODALIDADES = new Set(['AL_VENCIMIENTO', ...Object.keys(DIAS_PERIODO)]);
 // Parametros por cooperativa y su valor por defecto (el del sistema anterior). La retencion
 // y la base de dias deben validarlas el contador y la norma tributaria vigente.
 const PARAMETROS = {
@@ -107,6 +109,11 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
     if (!Number.isSafeInteger(nCuenta) || nCuenta < 1) throw new ErrorSolicitud('numeroCuenta invalido');
     const renovacion = String(entrada.tipoRenovacion || 'NO_RENOVAR').toUpperCase();
     if (!RENOVACION.has(renovacion)) throw new ErrorSolicitud('tipoRenovacion invalido');
+    const modalidad = String(entrada.modalidadPago || 'AL_VENCIMIENTO').toUpperCase();
+    if (!MODALIDADES.has(modalidad)) throw new ErrorSolicitud('modalidadPago: AL_VENCIMIENTO, MENSUAL o TRIMESTRAL');
+    if (DIAS_PERIODO[modalidad] && d <= DIAS_PERIODO[modalidad]) {
+      throw new ErrorSolicitud(`Pago ${modalidad.toLowerCase()} exige un plazo mayor a ${DIAS_PERIODO[modalidad]} dias`);
+    }
     const observaciones = entrada.observaciones ? String(entrada.observaciones).slice(0, 500) : null;
 
     const trabajo = async (tx, actor) => {
@@ -138,15 +145,15 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
          INSERT INTO tecnifin.depositos_plazo
            (codigo, num_certificado, socio_id, identificacion, nombre_socio, tasa_id, tasa_nominal_anual, plazo_dias,
             monto_capital, interes_proyectado, retencion_proyectada, interes_neto_proyectado, fecha_apertura,
-            fecha_vencimiento, tipo_renovacion, cuenta_ahorros_id, cuenta_contable_dpf, usuario_apertura_id, observaciones,
+            fecha_vencimiento, tipo_renovacion, modalidad_pago, cuenta_ahorros_id, cuenta_contable_dpf, usuario_apertura_id, observaciones,
             numero_renovacion, deposito_origen_id)
          SELECT n.codigo, n.codigo, @socio, @ident, @nombre, @tasaId, @tasa::numeric, @dias, @m::numeric,
-                @interes::numeric, @ret::numeric, @neto::numeric, ${HOY}, ${HOY} + @dias::int, @renov, @cuenta, @ctaDpf,
+                @interes::numeric, @ret::numeric, @neto::numeric, ${HOY}, ${HOY} + @dias::int, @renov, @modalidad, @cuenta, @ctaDpf,
                 @usuario, @obs, @numRenov, @origen
            FROM n
          RETURNING deposito_id, codigo, fecha_vencimiento::text AS vence`,
         { socio: cuenta.socio_id, ident: cuenta.identificacion, nombre: cuenta.nombre.slice(0, 200), tasaId: t.tasa_id,
-          tasa: t.tasa, dias: d, m, interes: i.interes, ret: i.retencion, neto: i.neto, renov: renovacion,
+          tasa: t.tasa, dias: d, m, interes: i.interes, ret: i.retencion, neto: i.neto, renov: renovacion, modalidad,
           cuenta: cuenta.cuenta_id, ctaDpf: t.cuenta_contable_dpf, usuario: actor.usuario_id, obs: observaciones,
           numRenov: entrada.numeroRenovacion || 0, origen: entrada.depositoOrigenId || null })).rows[0];
 
@@ -165,7 +172,7 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
       await auditarProceso(tx, actor, { proceso: 'PLAZO_FIJO', accion: 'ABRIR', entidadTipo: 'DPF', entidadId: dpf.codigo,
         nuevo: m, detalle: `${t.codigo_rango} al ${t.tasa} %, cuenta ${cuenta.numero_cuenta}.` });
       return { codigo: dpf.codigo, numeroSocio: Number(cuenta.numero_socio), capital: (await tx.query(
-        `SELECT @m::numeric(18,2)::text AS m`, { m })).rows[0].m, tramo: t.codigo_rango, tasa: t.tasa, plazoDias: d,
+        `SELECT @m::numeric(18,2)::text AS m`, { m })).rows[0].m, tramo: t.codigo_rango, tasa: t.tasa, plazoDias: d, modalidadPago: modalidad,
         interesProyectado: i.interes, retencionProyectada: i.retencion, interesNetoProyectado: i.neto,
         fechaVencimiento: dpf.vence, saldoCuenta: saldo.saldo };
     };
@@ -188,17 +195,27 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
 
   // Cierre comun a liquidar, cancelar y renovar: acredita capital + interes neto a la cuenta
   // de ahorros de origen y contabiliza el pasivo, el gasto por interes y la retencion.
+  // Con pago periodico se descuenta lo ya pagado: se liquida solo el resto del interes total.
+  // Si la penalizacion deja el interes total por debajo de lo ya pagado, el resto es 0 y lo
+  // pagado no se recupera del capital (decision a validar con el contador).
   async function cerrar(tx, actor, d, { estado, dias, penalizacionPct = '0', motivo = null, accion }) {
     const p = await parametros(tx);
-    const i = await intereses(tx, { capital: d.capital, tasa: d.tasa, dias, base: p['dpf.base_dias'],
+    const totalPlazo = await intereses(tx, { capital: d.capital, tasa: d.tasa, dias, base: p['dpf.base_dias'],
       retencionPct: p['dpf.retencion_pct'], penalizacionPct });
+    const ya = await pagadoDe(tx, d.deposito_id);
+    const i = (await tx.query(
+      `WITH x AS (SELECT CASE WHEN @i::numeric > @pi::numeric THEN @i::numeric - @pi::numeric ELSE 0 END AS interes,
+                         CASE WHEN @i::numeric > @pi::numeric THEN greatest(@r::numeric - @pr::numeric, 0) ELSE 0 END AS retencion)
+       SELECT interes::numeric(18,2)::text AS interes, retencion::numeric(18,2)::text AS retencion,
+              (interes - retencion)::numeric(18,2)::text AS neto FROM x`,
+      { i: totalPlazo.interes, r: totalPlazo.retencion, pi: ya.interes, pr: ya.retencion })).rows[0];
     const total = (await tx.query(`SELECT (@c::numeric + @n::numeric)::text AS t`, { c: d.capital, n: i.neto })).rows[0].t;
     const saldo = (await tx.query(
       `UPDATE tecnifin.cuentas SET saldo = saldo + @t::numeric WHERE cuenta_id = @id RETURNING saldo::text AS saldo`,
       { t: total, id: d.cuenta_ahorros_id })).rows[0].saldo;
     const penalizacion = (await tx.query(
-      `SELECT (round(@c::numeric * @tasa::numeric / 100 * @dias / @base::numeric, 2) - @i::numeric)::text AS p`,
-      { c: d.capital, tasa: d.tasa, dias, base: p['dpf.base_dias'], i: i.interes })).rows[0].p;
+      `SELECT (round(@c::numeric * @tasa::numeric / 100 * @dias / @base::numeric, 2) - @pi::numeric - @i::numeric)::text AS p`,
+      { c: d.capital, tasa: d.tasa, dias, base: p['dpf.base_dias'], pi: ya.interes, i: i.interes })).rows[0].p;
     const glosa = `${accion === 'CANCELAR' ? 'Cancelacion anticipada' : accion === 'RENOVAR' ? 'Renovacion' : 'Liquidacion'} del deposito ${d.codigo}`;
     const asiento = await asentar(tx, actor, { concepto: glosa, origenModulo: 'PLAZO_FIJO', origenId: d.codigo,
       tipoDocumento: `${accion}_DPF`, lineas: [
@@ -221,7 +238,8 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
         id: d.deposito_id });
     await auditarProceso(tx, actor, { proceso: 'PLAZO_FIJO', accion, entidadTipo: 'DPF', entidadId: d.codigo,
       campo: 'estado', anterior: d.estado, nuevo: estado, detalle: motivo || `Acreditado ${total} a la cuenta ${d.numero_cuenta}.` });
-    return { codigo: d.codigo, estado, diasReconocidos: dias, interes: i.interes, penalizacion, retencion: i.retencion,
+    return { codigo: d.codigo, estado, diasReconocidos: dias, interesPagadoAntes: ya.interes, interes: i.interes,
+      penalizacion, retencion: i.retencion,
       interesNeto: i.neto, totalAcreditado: total, numeroCuenta: Number(d.numero_cuenta), saldoCuenta: saldo };
   }
 
@@ -261,7 +279,7 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
       if (!d.vencido) throw new ErrorConflicto('Solo se renueva un deposito vencido');
       const cierre = await cerrar(tx, actor, d, { estado: 'RENOVADO', dias: d.plazo_dias, accion: 'RENOVAR' });
       const nuevo = await abrir(null, { monto: d.capital, plazoDias: dias ?? d.plazo_dias, numeroCuenta: d.numero_cuenta,
-        tipoRenovacion: d.tipo_renovacion, numeroRenovacion: d.numero_renovacion + 1, depositoOrigenId: d.deposito_id,
+        tipoRenovacion: d.tipo_renovacion, modalidadPago: d.modalidad_pago, numeroRenovacion: d.numero_renovacion + 1, depositoOrigenId: d.deposito_id,
         observaciones: `Renovacion de ${d.codigo}` }, contexto, { tx, actor });
       return { anterior: cierre, nuevo };
     });
@@ -273,7 +291,8 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
       const d = (await tx.query(
         `SELECT d.codigo, d.estado, d.monto_capital::text AS capital, d.tasa_nominal_anual::text AS tasa, d.plazo_dias,
                 d.interes_proyectado::text AS interes_proyectado, d.interes_neto_proyectado::text AS neto_proyectado,
-                d.fecha_apertura::text AS apertura, d.fecha_vencimiento::text AS vence, d.tipo_renovacion,
+                d.fecha_apertura::text AS apertura, d.fecha_vencimiento::text AS vence, d.tipo_renovacion, d.modalidad_pago,
+                d.deposito_id,
                 d.interes_neto_liquidado::text AS neto_liquidado, d.penalizacion_aplicada::text AS penalizacion,
                 d.numero_renovacion, s.numero_socio, c.numero_cuenta
            FROM tecnifin.depositos_plazo d
@@ -281,12 +300,18 @@ export function crearServicioPlazoFijo({ db, jwt, alertar = async () => {} }) {
            LEFT JOIN tecnifin.cuentas c ON c.cooperativa_id = d.cooperativa_id AND c.cuenta_id = d.cuenta_ahorros_id
           WHERE d.codigo = @c`, { c })).rows[0];
       if (!d) return { error: new ErrorNoEncontrado() };
-      return { codigo: d.codigo, estado: d.estado, numeroSocio: Number(d.numero_socio), numeroCuenta: Number(d.numero_cuenta),
+      const pagos = (await tx.query(
+        `SELECT periodo, fecha_corte::text AS "fechaCorte", interes::text AS interes, retencion::text AS retencion,
+                interes_neto::text AS "interesNeto"
+           FROM tecnifin.pagos_interes_dpf WHERE deposito_id = @id ORDER BY periodo`, { id: d.deposito_id })).rows;
+      return { codigo: d.codigo, estado: d.estado, modalidadPago: d.modalidad_pago, pagosInteres: pagos, numeroSocio: Number(d.numero_socio), numeroCuenta: Number(d.numero_cuenta),
         capital: d.capital, tasa: d.tasa, plazoDias: d.plazo_dias, fechaApertura: d.apertura, fechaVencimiento: d.vence,
         interesProyectado: d.interes_proyectado, interesNetoProyectado: d.neto_proyectado, tipoRenovacion: d.tipo_renovacion,
         interesNetoLiquidado: d.neto_liquidado, penalizacion: d.penalizacion, numeroRenovacion: d.numero_renovacion };
     });
   }
 
-  return { tramos, simular, abrir: (token, entrada, ctx) => abrir(token, entrada, ctx), liquidar, cancelar, renovar, ver };
+  const { pagarIntereses } = crearPagoIntereses({ conRoles, rolesSupervisor: ROLES_SUPERVISOR, parametros });
+  return { tramos, simular, abrir: (token, entrada, ctx) => abrir(token, entrada, ctx), liquidar, cancelar, renovar, ver,
+    pagarIntereses };
 }

@@ -162,6 +162,9 @@ async function rutasPlazoFijo(dpf, req, res, url, contexto) {
   const { solicitudId } = contexto;
   const p = url.pathname;
   if (req.method === 'GET' && p === '/api/dpf/tramos') return responder(res, 200, await dpf.tramos(tokenBearer(req), contexto), solicitudId);
+  if (req.method === 'POST' && p === '/api/dpf/intereses/pagos') {
+    return responder(res, 200, await dpf.pagarIntereses(tokenBearer(req), contexto), solicitudId);
+  }
   if (req.method === 'POST' && (p === '/api/dpf/simulacion' || p === '/api/dpf')) {
     const token = tokenBearer(req);
     const cuerpo = await leerJson(req);

@@ -28,5 +28,7 @@
 
 ## Contador (nuevo, 1-oct)
 1. DPF: validar la retención (hoy 2 %) y la base de días del interés (hoy 365). Son parámetros por cooperativa (dpf.retencion_pct, dpf.base_dias).
+   Pago periódico: períodos de 30/90 días (no meses calendario), y en una cancelación anticipada el interés ya pagado
+   que exceda al penalizado **no** se descuenta del capital. Confirmar ambas reglas (patrón 07 §4).
 3. Créditos: interés de mora = tasa pactada × 1,1 sobre el capital vencido, base 360 (parámetros credito.factor_mora y credito.base_dias). Confirmar con la norma vigente.
 2. Créditos: confirmar cuentas de los descuentos al desembolso (comisión 529010, fondo 330105, SOLCA 250490; la 25049005 del sistema anterior no existe en el catálogo).

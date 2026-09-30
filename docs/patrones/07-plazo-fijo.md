@@ -36,8 +36,24 @@
 | La cancelacion agregaba la penalizacion como linea de haber: **el asiento descuadraba por el monto de la penalizacion** | La penalizacion reduce el interes; la base rechaza cualquier descuadre |
 | Retencion 2 % y base 365 escritas en el codigo | Parametros por cooperativa |
 
-## 4. Pendiente
+## 4. Pago periodico de intereses (0027)
 
-Pago periodico de intereses (modalidades MENSUAL/TRIMESTRAL), renovacion automatica por proceso diario,
+`modalidadPago` en la apertura: `AL_VENCIMIENTO` (defecto), `MENSUAL` (cada 30 dias) o `TRIMESTRAL` (cada 90); el
+plazo debe ser mayor al periodo. `POST /api/dpf/intereses/pagos` (supervisor) paga todos los periodos vencidos a hoy
+de los depositos ACTIVOS con pago periodico; un periodo pagado no se repite (`pagos_interes_dpf`, UNIQUE deposito +
+periodo). Codigo en `src/modules/plazo_fijo/intereses.js`.
+
+1. **Interes del periodo = acumulado(fin) - acumulado(inicio)**, cada acumulado redondeado al centavo; igual la
+   retencion. La suma de los pagos mas la liquidacion es exactamente el interes del plazo completo.
+2. Asiento por periodo (`INTERES_DPF`): D 410130 / H ahorros neto + H 250405 retencion. El capital sigue en 2103xx.
+3. El ultimo tramo lo paga la liquidacion: interes total del plazo menos lo ya pagado.
+4. **Cancelacion con pagos previos:** el interes penalizado de los dias transcurridos menos lo pagado; si da negativo
+   se liquida 0 y **lo pagado no se descuenta del capital**. Decision a validar con el contador (alternativa: descontar
+   el exceso del capital devuelto).
+5. Periodos de 30/90 dias (misma convencion del calculo), no meses calendario: tambien a validar con el contador.
+
+## 5. Pendiente
+
+Renovacion automatica por proceso diario,
 provision/devengo mensual del interes por pagar (cuando se haga el cierre contable mensual), apertura en efectivo
 por caja.

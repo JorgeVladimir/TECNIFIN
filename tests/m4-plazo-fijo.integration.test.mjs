@@ -195,6 +195,46 @@ test('libro mayor: todo cuadra y el pasivo 2103 es el capital de los depositos v
   assert.deepEqual(r.rows[0], { descuadre: '0.00', pasivo: '500.00', vigentes: '500.00' });
 });
 
+test('pago mensual de intereses: periodos vencidos, idempotente, y la liquidacion paga solo el resto', async () => {
+  assert.equal((await abrir({ monto: '1000', plazoDias: 90, modalidadPago: 'TRIMESTRAL' })).estado, 400, 'plazo = periodo');
+  const r = await abrir({ monto: '1000', plazoDias: 180, modalidadPago: 'MENSUAL' });
+  assert.equal(r.estado, 201);
+  const codigo = r.cuerpo.codigo;
+  const pagar = (token = t.gerente) => llamar('/api/dpf/intereses/pagos', { metodo: 'POST', token, cuerpo: {} });
+  assert.equal((await pagar(t.caja)).estado, 403);
+  await envejecer(codigo, 65);
+  const antes = await saldo();
+  const p = await pagar();
+  assert.equal(p.estado, 200);
+  // Acumulados a 6,5 %, base 365: 30 d = 5.34, 60 d = 10.68; retencion 0.11 y 0.21.
+  assert.deepEqual(p.cuerpo.pagos.map(x => [x.periodo, x.interes, x.retencion, x.interesNeto]),
+    [[1, '5.34', '0.11', '5.23'], [2, '5.34', '0.10', '5.24']]);
+  assert.equal((Number(await saldo()) - Number(antes)).toFixed(2), '10.47');
+  assert.equal((await pagar()).cuerpo.periodosPagados, 0, 'un periodo no se paga dos veces');
+  assert.equal((await llamar(`/api/dpf/${codigo}`, { token: t.caja })).cuerpo.pagosInteres.length, 2);
+
+  await envejecer(codigo, 180);
+  const l = await llamar(`/api/dpf/${codigo}/liquidar`, { metodo: 'POST', token: t.caja, cuerpo: {} });
+  assert.equal(l.estado, 200);
+  // Total del plazo 32.05 (retencion 0.64): se liquida 32.05 - 10.68 = 21.37 y 0.64 - 0.21 = 0.43.
+  assert.deepEqual([l.cuerpo.interesPagadoAntes, l.cuerpo.interes, l.cuerpo.retencion, l.cuerpo.totalAcreditado],
+    ['10.68', '21.37', '0.43', '1020.94']);
+  assert.deepEqual(await libroDe(codigo, 'LIQUIDAR_DPF'), [
+    ['210315', 'D', '1000.00'], ['410130', 'D', '21.37'], ['210135', 'H', '1020.94'], ['250405', 'H', '0.43']]);
+});
+
+test('cancelacion con intereses ya pagados: el resto no baja de cero ni toca el capital', async () => {
+  const codigo = (await abrir({ monto: '1000', plazoDias: 180, modalidadPago: 'MENSUAL' })).cuerpo.codigo;
+  await envejecer(codigo, 65);
+  await llamar('/api/dpf/intereses/pagos', { metodo: 'POST', token: t.gerente, cuerpo: {} });
+  const c = await llamar(`/api/dpf/${codigo}/cancelar`, { metodo: 'POST', token: t.gerente,
+    cuerpo: { motivo: 'Necesidad del socio' } });
+  assert.equal(c.estado, 200);
+  // 65 dias: nominal 11.58, con 50 % de penalizacion 5.79 < 10.68 ya pagado -> resto 0.
+  assert.deepEqual([c.cuerpo.interes, c.cuerpo.retencion, c.cuerpo.penalizacion, c.cuerpo.totalAcreditado],
+    ['0.00', '0.00', '0.90', '1000.00']);
+});
+
 test('la cooperativa B no ve depositos de A', async () => {
   assert.equal((await llamar(`/api/dpf/${t.dpf1}`, { token: t.cajaB })).estado, 404);
 });
