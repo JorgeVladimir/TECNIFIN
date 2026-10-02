@@ -20,6 +20,7 @@ npm run migrate:apply  # aplica lo pendiente, en orden, transaccional, con SHA-2
 npm test               # unitarias + higiene + aislamiento + semillas + demo (crean y borran sus bases)
 npm run test:aislamiento  # solo la prueba de aislamiento entre dos cooperativas
 npm run demo:crear     # borra y recrea la base de DEMOSTRACIÓN entera (tecnifin_demo)
+npm run auditoria      # solo lectura: mayor contra auxiliares (cartera, 1603, suspenso, DPF, ahorros...) en dev y demo; sale con 1 si algo no cuadra
 ```
 
 **La base de demostración es otra base.** `demo:crear` la borra y la vuelve a crear desde cero con las mismas

@@ -204,3 +204,12 @@ test('la simulacion muestra los rubros de cada cuota y el costo total para el so
     ((Math.round(Number(r.cuerpo.totalPagar) * 100) + Math.round(Number(r.cuerpo.totalRubros) * 100)) / 100).toFixed(2));
   assert.deepEqual(r.cuerpo.rubros.map(x => x.codigo), ['GASTOS', 'SEGURO', 'SOLCA']);
 });
+
+test('auditoria contable: todo cuadra despues del ciclo y detecta un saldo alterado', async () => {
+  const { auditarBase } = await import('../tools/auditoria.mjs');
+  assert.deepEqual((await auditarBase(admin)).hallazgos, []);
+  await withTenant(coopA.cooperativa_id, tx => tx.query(`UPDATE tecnifin.creditos SET saldo = saldo - 1`));
+  const { hallazgos } = await auditarBase(admin);
+  assert.deepEqual(hallazgos.map(h => [h.ambito, h.control]), [['COOP-A', 'creditos: saldo vs cuotas']]);
+  await withTenant(coopA.cooperativa_id, tx => tx.query(`UPDATE tecnifin.creditos SET saldo = saldo + 1`));
+});

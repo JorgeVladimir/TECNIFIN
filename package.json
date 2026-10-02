@@ -16,7 +16,8 @@
     "db:init": "node tools/init-db.mjs",
     "demo:crear": "node tools/demo.mjs",
     "estado": "node tools/estado.mjs",
-    "verificar": "node tools/verificar.mjs"
+    "verificar": "node tools/verificar.mjs",
+    "auditoria": "node tools/auditoria.mjs"
   },
   "dependencies": {
     "nodemailer": "^10.0.13",

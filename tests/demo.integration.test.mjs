@@ -202,3 +202,13 @@ test('recrear la demo desde cero deja el mismo contenido de negocio', async () =
   const despues = await retrato();
   assert.deepEqual(despues, antes, 'la demo no es reproducible');
 });
+
+test('la demo pasa la auditoria contable completa (mayor contra auxiliares)', async () => {
+  const { auditarBase } = await import('../tools/auditoria.mjs');
+  const base = connectPostgres(entornoAdmin(entornoDemo));
+  try {
+    const { cooperativas, hallazgos } = await auditarBase(base);
+    assert.equal(cooperativas, 1);
+    assert.deepEqual(hallazgos, []);
+  } finally { await base.close(); }
+});
