@@ -48,3 +48,13 @@ export async function asentar(tx, actor, { concepto, origenModulo, origenId, tip
       valor: l.valor, socio: l.socioId ?? null }))) });
   return asiento;
 }
+
+// Lineas del asiento contrario exacto de otro (anulaciones y reversos): misma cuenta, valor y
+// socio, con Debe y Haber intercambiados. Una sola implementacion (regla 13).
+export async function lineasInversas(tx, asientoId) {
+  return (await tx.query(
+    `SELECT pc.codigo, CASE d.tipo_asiento WHEN 'D' THEN 'H' ELSE 'D' END AS tipo, d.valor::text AS valor, d.socio_id AS "socioId"
+       FROM tecnifin.detalle_asiento d
+       JOIN tecnifin.plan_cuentas pc ON pc.cooperativa_id = d.cooperativa_id AND pc.cuenta_contable_id = d.cuenta_contable_id
+      WHERE d.asiento_id = @a ORDER BY d.detalle_id`, { a: asientoId })).rows;
+}

@@ -11,7 +11,7 @@
 // Antes de aplicar, el mayor de 1603xx y 7109xx debe coincidir al centavo con lo acumulado en
 // las cuotas pendientes; si no, se niega (igual que la reclasificacion de capital).
 import { auditarProceso, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud } from '../../platform/autenticacion.js';
-import { asentar } from '../../platform/contabilidad.js';
+import { asentar, lineasInversas } from '../../platform/contabilidad.js';
 import {
   aTexto, CUENTA_INTERES, CUENTA_INTERES_POR_COBRAR, CUENTA_SUSPENSO, CUENTA_SUSPENSO_CONTRA,
 } from '../creditos/calculo.js';
@@ -148,11 +148,7 @@ export function crearDevengo({ conRoles, saldosContables, fechaCorteValida }) {
       if (cambiadas) throw new ErrorConflicto(`${cambiadas} cuota(s) se cobraron o castigaron despues del devengo: no se puede reversar`);
       let reverso = null;
       if (pr.asiento_id) {
-        const lineas = (await tx.query(
-          `SELECT pc.codigo, CASE d.tipo_asiento WHEN 'D' THEN 'H' ELSE 'D' END AS tipo, d.valor::text AS valor
-             FROM tecnifin.detalle_asiento d
-             JOIN tecnifin.plan_cuentas pc ON pc.cooperativa_id = d.cooperativa_id AND pc.cuenta_contable_id = d.cuenta_contable_id
-            WHERE d.asiento_id = @a`, { a: pr.asiento_id })).rows;
+        const lineas = await lineasInversas(tx, pr.asiento_id);
         reverso = await asentar(tx, actor, { concepto: `Reverso del devengo al ${pr.corte}: ${razon}`, origenModulo: 'CREDITOS',
           origenId: `DEVENGO-${pr.corte}`, tipoDocumento: 'REVERSO_DEVENGO', lineas });
       }
