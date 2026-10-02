@@ -11,6 +11,7 @@
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 - APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
+- Endurecimiento (2-oct, Fase 5 adelantada): bloqueo de cuenta por intentos fallidos parametrizable por cooperativa, sin enumeracion de usuarios, alerta al bloquear, desbloqueo al restablecer clave; cabeceras de seguridad en toda respuesta; migracion 0031; 6 pruebas (189).
 - Operacion (2-oct, regla 10): tools/respaldo.mjs (pg_dump, restauracion en base temporal con conteos y auditoria, poda), deploy/programar-respaldo.ps1 (tarea diaria SYSTEM) y tools/preflight.mjs (BLOQUEA/AVISO/OK). 183 pruebas.
 - tools/auditoria.mjs (npm run auditoria, 1-oct): auditoria contable de solo lectura por cooperativa, 10 controles del mayor contra sus auxiliares mas los del esquema; la usan la prueba de la demo y la de rubros (que comprueba que detecta un saldo alterado). 181 pruebas.
 - Regla 13 (1-oct): el lado del dinero de un cobro (caja o cuenta) vive en src/modules/caja/origen.js y lo usan cobro, abono y recuperacion de castigados (cartera tenia su copia); las lineas del asiento inverso, en platform/contabilidad.js (lineasInversas), usadas por anulacion de pagos y reversos de cartera y devengo.

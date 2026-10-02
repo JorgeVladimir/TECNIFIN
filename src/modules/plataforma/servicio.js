@@ -63,6 +63,15 @@ function loginCanonico(valor) {
   return login;
 }
 
+// Politica de bloqueo por cooperativa: auth.max_intentos (5) y auth.bloqueo_minutos (15).
+function politicaBloqueo(filas) {
+  const entero = (clave, defecto, max) => {
+    const n = Number(filas.find(f => f.clave === clave)?.valor);
+    return Number.isSafeInteger(n) && n > 0 && n <= max ? n : defecto;
+  };
+  return { maximo: entero('auth.max_intentos', 5, 100), minutos: entero('auth.bloqueo_minutos', 15, 1440) };
+}
+
 function vidaJwt(filas) {
   const valor = filas.find(fila => fila.clave === 'auth.jwt_vida_segundos')?.valor;
   const segundos = Number(valor);
@@ -81,24 +90,49 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
     const loginUsuario = loginCanonico(usuario);
     if (typeof clave !== 'string' || clave.length < 1) throw new ErrorSolicitud('Credenciales incompletas');
     let resultado;
+    let bloqueadoAhora = false;
     try {
       resultado = await withTenantPorCodigo(cooperativa, async tx => {
         const usuarios = await tx.query(
-          `SELECT usuario_id, cooperativa_id, login, nombre_completo, password_hash, rol, activo, requiere_cambio_pin
-             FROM tecnifin.usuarios WHERE login = @login`, { login: loginUsuario });
+          `SELECT usuario_id, cooperativa_id, login, nombre_completo, password_hash, rol, activo, requiere_cambio_pin,
+                  coalesce(bloqueado_hasta > now(), false) AS bloqueado
+             FROM tecnifin.usuarios WHERE login = @login FOR UPDATE`, { login: loginUsuario });
         const encontrado = usuarios.rows[0];
+        // La clave se verifica siempre (tambien sin usuario o bloqueado): el tiempo de respuesta
+        // no delata nada.
         const coincide = await verificarClave(
           encontrado?.login || '__usuario_inexistente__', clave,
           encontrado?.password_hash || await hashFicticio);
-        if (!encontrado || !encontrado.activo || !coincide) {
-          await auditar(tx, loginUsuario, 'LOGIN_FALLIDO', 'Credenciales invalidas o usuario inactivo.');
-          return { error: new ErrorAutenticacion('Credenciales invalidas') };
-        }
-
         const parametros = (await tx.query(
           `SELECT clave, valor FROM tecnifin.parametros_cooperativa
-            WHERE clave IN ('auth.jwt_vida_segundos', 'auth.refresh_habilitado', 'auth.invalidacion_modo')`
+            WHERE clave IN ('auth.jwt_vida_segundos', 'auth.refresh_habilitado', 'auth.invalidacion_modo',
+                            'auth.max_intentos', 'auth.bloqueo_minutos')`
         )).rows;
+        if (encontrado?.bloqueado) {
+          await auditar(tx, loginUsuario, 'LOGIN_BLOQUEADO', 'Intento sobre una cuenta bloqueada por intentos fallidos.');
+          return { error: new ErrorAutenticacion('Credenciales invalidas') };
+        }
+        if (!encontrado || !encontrado.activo || !coincide) {
+          await auditar(tx, loginUsuario, 'LOGIN_FALLIDO', 'Credenciales invalidas o usuario inactivo.');
+          if (encontrado) {
+            const { maximo, minutos } = politicaBloqueo(parametros);
+            const fila = (await tx.query(
+              `UPDATE tecnifin.usuarios
+                  SET intentos_fallidos = CASE WHEN intentos_fallidos + 1 >= @max THEN 0 ELSE intentos_fallidos + 1 END,
+                      bloqueado_hasta = CASE WHEN intentos_fallidos + 1 >= @max THEN now() + make_interval(mins => @min) END
+                WHERE usuario_id = @id RETURNING bloqueado_hasta IS NOT NULL AS bloqueado`,
+              { max: maximo, min: minutos, id: encontrado.usuario_id })).rows[0];
+            if (fila.bloqueado) {
+              await auditar(tx, loginUsuario, 'USUARIO_BLOQUEADO', `${maximo} intentos fallidos: bloqueado ${minutos} minutos.`);
+              bloqueadoAhora = true;
+            }
+          }
+          return { error: new ErrorAutenticacion('Credenciales invalidas') };
+        }
+        await tx.query(`UPDATE tecnifin.usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL
+                          WHERE usuario_id = @id AND (intentos_fallidos > 0 OR bloqueado_hasta IS NOT NULL)`,
+          { id: encontrado.usuario_id });
+
         const vidaSegundos = vidaJwt(parametros);
         if (!vidaSegundos) {
           await auditar(tx, loginUsuario, 'LOGIN_NO_CONFIGURADO', 'Falta configurar la vigencia JWT del tenant.');
@@ -113,6 +147,9 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
         throw new ErrorAutenticacion('Credenciales invalidas');
       }
       throw error;
+    }
+    if (bloqueadoAhora) {
+      await alertar({ tipo: 'USUARIO_BLOQUEADO', solicitudId: contexto.solicitudId, cooperativa, usuario: loginUsuario });
     }
     if (resultado.error) throw resultado.error;
     const u = resultado.usuario;
@@ -265,7 +302,7 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
       const { objetivo } = busqueda;
       const temporal = claveTemporal();
       await tx.query(
-        `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = true WHERE usuario_id = @id`,
+        `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = true, intentos_fallidos = 0, bloqueado_hasta = NULL WHERE usuario_id = @id`,
         { hash: await hashearClave(objetivo.login, temporal), id: objetivo.usuario_id });
       await auditar(tx, actor.login, 'RESTABLECER_CLAVE', `Clave temporal emitida para ${objetivo.login}.`);
       return { login: objetivo.login, claveTemporal: temporal, requiereCambioPin: true };
@@ -356,7 +393,7 @@ export function crearServicioPlataforma({ db, jwt, alertar = async () => {}, cor
         }
         validarClaveNueva(fila.login, claveNueva);
         await tx.query(
-          `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = false WHERE usuario_id = @id`,
+          `UPDATE tecnifin.usuarios SET password_hash = @hash, requiere_cambio_pin = false, intentos_fallidos = 0, bloqueado_hasta = NULL WHERE usuario_id = @id`,
           { hash: await hashearClave(fila.login, claveNueva), id: fila.usuario_id });
         await tx.query(
           `UPDATE tecnifin.recuperaciones_clave SET consumida = now() WHERE recuperacion_id = @id`,

@@ -11,6 +11,12 @@ function responder(res, estado, cuerpo, solicitudId) {
     'content-length': Buffer.byteLength(datos),
     'x-request-id': solicitudId,
     'cache-control': 'no-store',
+    // Endurecimiento: la API solo devuelve JSON; nada se interpreta, se incrusta ni se filtra.
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'referrer-policy': 'no-referrer',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains',
   });
   res.end(datos);
   // true: la ruta ya respondio (los enrutadores de modulo devuelven undefined si no es suya).

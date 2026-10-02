@@ -141,3 +141,18 @@ Pruebas minimas: credencial correcta e incorrecta; firma/`coop` manipulado; emis
 token de A frente a datos de B; selector de tenant hostil en query/cabecera/cuerpo; rol permitido y denegado;
 auditoria; configuracion distinta en A/B; cambio de contexto que cause rollback, alerta y descarte de conexion.
 
+
+## 7. Endurecimiento del login y de las respuestas (2-oct-2026, migracion 0031)
+
+- **Bloqueo por intentos:** cada clave equivocada de un usuario existente suma `usuarios.intentos_fallidos`; al
+  llegar a `auth.max_intentos` (5 por defecto, parametro por cooperativa) la cuenta queda bloqueada
+  `auth.bloqueo_minutos` (15) en `usuarios.bloqueado_hasta`, se audita `USUARIO_BLOQUEADO` y se emite la alerta
+  `USUARIO_BLOQUEADO`. Mientras dure, ni la clave correcta entra (`LOGIN_BLOQUEADO` en la auditoria).
+- **Sin enumeracion:** usuario inexistente, clave equivocada y cuenta bloqueada responden igual (401, mismo
+  mensaje) y la clave se verifica siempre, para que el tiempo tampoco delate.
+- El login correcto pone el contador en 0; restablecer o recuperar la clave desbloquea.
+- El bloqueo es por usuario de una cooperativa (el mismo login en otra no se toca). No hay limite por IP: el
+  servicio quedara detras de un proxy (Fase 4) y ahi se decide el limite de solicitudes por origen.
+- **Cabeceras** en toda respuesta: `x-content-type-options: nosniff`, `x-frame-options: DENY`,
+  `content-security-policy: default-src 'none'; frame-ancestors 'none'`, `referrer-policy: no-referrer`,
+  `strict-transport-security` y `cache-control: no-store`.
