@@ -31,4 +31,5 @@
    Pago periódico: períodos de 30/90 días (no meses calendario), y en una cancelación anticipada el interés ya pagado
    que exceda al penalizado **no** se descuenta del capital. Confirmar ambas reglas (patrón 07 §4).
 3. Créditos: interés de mora = tasa pactada × 1,1 sobre el capital vencido, base 360 (parámetros credito.factor_mora y credito.base_dias). Confirmar con la norma vigente.
+4. Créditos: en el abono extraordinario a capital, el interés de la cuota en curso no se recalcula (el abono rige desde la cuota siguiente). Confirmar (patrón 06 §6).
 2. Créditos: confirmar cuentas de los descuentos al desembolso (comisión 529010, fondo 330105, SOLCA 250490; la 25049005 del sistema anterior no existe en el catálogo).

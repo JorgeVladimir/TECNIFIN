@@ -43,3 +43,23 @@ test('las bandas salen del catalogo y no son simetricas entre familias', () => {
   assert.equal(cuentaPorBanda(bandas, '1402', 0), '140205', 'la banda mas baja arranca en 1');
   assert.equal(cuentaPorBanda(bandas, '9999', 10), null, 'sin bandas no se inventa cuenta');
 });
+
+test('abono a capital: reducir cuota conserva el numero de cuotas y suma el saldo exacto', async () => {
+  const { recalcularTrasAbono } = await import('../src/modules/creditos/calculo.js');
+  const filas = recalcularTrasAbono('3000.00', '15', 10, 'REDUCIR_CUOTA');
+  assert.equal(filas.length, 10);
+  assert.equal(aTexto(filas.reduce((s, f) => s + f.capital, 0)), '3000.00');
+  assert.equal(filas[0].interes, 3750); // 3000 x 15 % / 12
+});
+
+test('abono a capital: reducir plazo conserva la cuota y extingue las ultimas', async () => {
+  const { recalcularTrasAbono } = await import('../src/modules/creditos/calculo.js');
+  const filas = recalcularTrasAbono('3000.00', '15', 10, 'REDUCIR_PLAZO', '541.55');
+  const vivas = filas.filter(Boolean);
+  assert.ok(vivas.length < 10 && vivas.length >= 5);
+  assert.ok(filas.slice(vivas.length).every(f => f === null));
+  assert.equal(aTexto(vivas.reduce((s, f) => s + f.capital, 0)), '3000.00');
+  assert.ok(vivas.slice(0, -1).every(f => f.total === 54155));
+  assert.ok(vivas.at(-1).total <= 54155);
+  assert.throws(() => recalcularTrasAbono('3000', '15', 10, 'OTRA'), RangeError);
+});

@@ -82,3 +82,27 @@ export function cuentaPorBanda(bandas, familia, dias) {
   const d = Math.max(1, Math.ceil(dias));
   return (lista.find(b => d >= b.desde && (b.hasta === null || d <= b.hasta)) || lista.at(-1)).codigo;
 }
+
+// Tabla de las cuotas que siguen a la cuota en curso despues de un abono extraordinario a
+// capital. saldo: capital que queda tras el abono (texto); n: cuotas que quedan por delante.
+//  * REDUCIR_CUOTA: mismas n cuotas y mismas fechas, cuota francesa nueva sobre el saldo.
+//  * REDUCIR_PLAZO: se conserva el valor de la cuota (cuotaActual) y se extinguen las ultimas;
+//    devuelve null en las posiciones que dejan de existir.
+// En centavos enteros; el capital suma exactamente el saldo.
+export function recalcularTrasAbono(saldo, tasaAnual, n, modalidad, cuotaActual) {
+  if (modalidad === 'REDUCIR_CUOTA') return amortizacionFrancesa(saldo, tasaAnual, n).filas;
+  if (modalidad !== 'REDUCIR_PLAZO') throw new RangeError('Modalidad invalida');
+  const i = Number(tasaAnual) / 1200;
+  const cuota = aCentavos(cuotaActual);
+  let resto = aCentavos(saldo);
+  const filas = [];
+  for (let k = 1; k <= n; k++) {
+    if (resto === 0) { filas.push(null); continue; }
+    const interes = Math.round(resto * i);
+    if (cuota - interes <= 0) throw new RangeError('La cuota no cubre el interes');
+    const capital = k === n ? resto : Math.min(resto, cuota - interes);
+    resto -= capital;
+    filas.push({ numero: k, capital, interes, total: capital + interes, saldo: resto });
+  }
+  return filas;
+}

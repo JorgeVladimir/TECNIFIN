@@ -16,7 +16,7 @@
 | 11 | ~~M6 cartera SEPS~~ **HECHA 1-oct** (131 pruebas) | Claude | patrón 08 |
 | 12 | ~~M5 contabilidad~~ **HECHA 1-oct** (137 pruebas) | Claude | patrón 09 |
 | 13 | ~~M7 reportes SEPS~~ **HECHA 1-oct** (146 pruebas) | Claude | patrón 10 |
-| 14 | **SIGUIENTE** Pendientes por módulo: créditos (pago parcial, mora, rubros), cartera (devengo). Hechos: mora, cancelación anticipada, castigo, recuperación, pagos periódicos DPF | Claude | patrones 06-08 |
+| 14 | **SIGUIENTE** Pendientes por módulo: créditos (rubros), cartera (devengo). Hechos: mora, cancelación anticipada, castigo, recuperación, pagos periódicos DPF, abono a capital (168 pruebas) | Claude | patrones 06-08 |
 | 15 | Canal del socio (requiere decisión de Christian sobre autenticación) | Claude | por redactar |
 
 Bloqueos que no son técnicos están en `PENDIENTES_USUARIO.md`. No se empieza una unidad que dependa de una pregunta abierta.

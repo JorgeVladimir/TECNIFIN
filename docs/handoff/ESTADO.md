@@ -11,6 +11,7 @@
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 - APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
+- M3 abono extraordinario a capital (1-oct): REDUCIR_CUOTA o REDUCIR_PLAZO desde la cuota siguiente a la en curso, asiento por diferencia de capital en cada subcuenta, anulacion exacta con foto antes/despues; la reversion de cartera ahora tambien compara el capital; migracion 0028; 8 pruebas. Corregida prueba de M3 que dependia de que el mes tuviera 30 dias.
 - Demo alineada con M3-M6 (1-oct): cuotas con cuenta_capital por banda, segmento, cuotas pagadas asentadas, DPF con base 365; el mayor de cartera cuadra con las cuotas (antes 9000 vs 6111.74). Base tecnifin_demo recreada.
 - M4 pago periódico de intereses DPF (1-oct): MENSUAL/TRIMESTRAL, por diferencia de acumulados (la suma cuadra con el total del plazo), idempotente; liquidación y cancelación descuentan lo pagado; migración 0027.
 - M6 recuperación de castigados (1-oct): a ingreso 560405, baja el control de orden, tope en lo castigado; migración 0026.

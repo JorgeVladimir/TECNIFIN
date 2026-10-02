@@ -83,6 +83,31 @@ sin base viven en `src/modules/creditos/calculo.js`.
   una cuota VENCIDA por el proceso de cartera vuelve a VENCIDA, no a PENDIENTE (defecto corregido).
 - El cobro vive en `cobro.js` y el ciclo de otorgamiento en `servicio.js` (regla 4: 500 lineas por archivo).
 
-Pendiente de M3: abono parcial a capital con recalculo de la tabla, rubros por cuota (seguro, gastos) como datos,
+Pendiente de M3: rubros por cuota (seguro, gastos) como datos, scoring. El abono a capital esta en §6.
 scoring. Luego M6 (cartera SEPS: vencimiento, no devenga, reclasificacion y
 provisiones) reutiliza `calculo.js` y `cuenta_capital`.
+
+## 6. Abono extraordinario a capital (1-oct-2026, migracion 0028, `src/modules/creditos/abono.js`)
+
+| Endpoint | Rol | Efecto |
+|---|---|---|
+| `POST /api/creditos/:codigo/abonos/simulacion` | Cobro | Tabla resultante sin escribir nada: nueva cuota, cuotas restantes, ahorro de interes |
+| `POST /api/creditos/:codigo/abonos` | Cobro | `monto`, `modalidad` (REDUCIR_CUOTA por defecto o REDUCIR_PLAZO), `origen` CAJA o CUENTA |
+
+- Solo con el credito **al dia**: si hay una cuota vencida, primero se paga (409).
+- La **cuota en curso no cambia** (su interes se calculo sobre el saldo con que empezo el periodo); se
+  recalculan las siguientes con `recalcularTrasAbono` (centavos enteros, el capital suma exacto el saldo).
+  REDUCIR_CUOTA: mismas fechas y numero de cuotas, cuota francesa nueva. REDUCIR_PLAZO: misma cuota; las
+  ultimas quedan `EXTINGUIDA` con capital 0 (la fila se conserva: puede estar referida por un proceso de
+  cartera) y `creditos.fecha_vencimiento` se adelanta.
+- El abono debe ser **menor** que el capital de las cuotas siguientes; si lo cubre todo, es una cancelacion
+  anticipada (§5).
+- **Asiento:** Debe el origen; Haber la diferencia de capital de **cada subcuenta** (las fechas no cambian, asi
+  que cada cuota conserva su banda). En REDUCIR_PLAZO alguna cuota puede subir de capital: esa subcuenta va al
+  Debe. La prueba comprueba que el mayor de cada subcuenta 1401..1428 es igual al capital pendiente de sus cuotas.
+- Documento: `pagos_credito` tipo `ABONO` con `modalidad` y `cuotas_abono` (foto antes/despues de cada cuota).
+  **Anulacion** por el mismo endpoint de pagos: asiento inverso del original y la tabla vuelve a "antes", solo si
+  sigue exactamente igual a "despues" (ni pagos ni procesos de cartera en medio).
+- El proceso de cartera ya no se reversa si el **capital** de una cuota cambio despues de aplicarlo (antes solo
+  miraba cuenta y estado): un abono en medio lo habria descuadrado.
+- **Contador:** confirmar que el interes de la cuota en curso no se recalcula (el abono rige desde la siguiente).

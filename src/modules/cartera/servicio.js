@@ -303,8 +303,8 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
       const cambiadas = (await tx.query(
         `SELECT count(*)::int AS n FROM tecnifin.reclasificacion_cuota rc
            JOIN tecnifin.tabla_amortizacion ta ON ta.cooperativa_id = rc.cooperativa_id AND ta.amortizacion_id = rc.amortizacion_id
-          WHERE rc.proceso_id = @id AND (ta.cuenta_capital <> rc.cuenta_nueva OR ta.estado <> rc.estado_nuevo)`, { id })).rows[0].n;
-      if (cambiadas) throw new ErrorConflicto(`${cambiadas} cuota(s) cambiaron despues del proceso (pagos): no se puede reversar`);
+          WHERE rc.proceso_id = @id AND (ta.cuenta_capital <> rc.cuenta_nueva OR ta.estado <> rc.estado_nuevo OR ta.capital <> rc.capital)`, { id })).rows[0].n;
+      if (cambiadas) throw new ErrorConflicto(`${cambiadas} cuota(s) cambiaron despues del proceso (pagos o abonos): no se puede reversar`);
 
       let contra = null;
       if (pr.asiento_id) {

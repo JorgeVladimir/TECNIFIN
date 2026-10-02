@@ -229,8 +229,11 @@ test('pago por debito a la cuenta: capital desde su banda e interes a 510410', a
        JOIN tecnifin.detalle_asiento d ON d.asiento_id = p.asiento_id
        JOIN tecnifin.plan_cuentas pc ON pc.cuenta_contable_id = d.cuenta_contable_id
       WHERE p.numero_pago = 1 ORDER BY d.tipo_asiento, pc.codigo`));
+  // La banda depende de cuantos dias tiene el mes: hoy + 1 mes son 28 a 31 dias (140205 o 140210).
+  const banda1 = (await llamar('/api/creditos/CRED-000001', { token: t.oficial })).cuerpo.tabla[0].cuentaCapital;
+  assert.ok(['140205', '140210'].includes(banda1));
   assert.deepEqual(libro.rows.map(f => [f.codigo, f.tipo_asiento, f.valor]),
-    [['210135', 'D', '541.55'], ['140205', 'H', '466.55'], ['510410', 'H', '75.00']]);
+    [['210135', 'D', '541.55'], [banda1, 'H', '466.55'], ['510410', 'H', '75.00']]);
 });
 
 test('pago por caja: efectivo verificado, comprobante de caja y entra al cuadre como ingreso', async () => {
