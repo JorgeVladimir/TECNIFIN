@@ -17,7 +17,9 @@
     "demo:crear": "node tools/demo.mjs",
     "estado": "node tools/estado.mjs",
     "verificar": "node tools/verificar.mjs",
-    "auditoria": "node tools/auditoria.mjs"
+    "auditoria": "node tools/auditoria.mjs",
+    "respaldo": "node tools/respaldo.mjs",
+    "preflight": "node tools/preflight.mjs"
   },
   "dependencies": {
     "nodemailer": "^10.0.13",
