@@ -125,6 +125,13 @@ async function crearCatalogosPropios(tx, usuarios) {
             ('MICROCREDITO MINORISTA', 'MICROEMPRESA', 100.00,  20000.00,  3,  36, 20.0000, 24.0000, 22.0000),
             ('VIVIENDA HIPOTECARIA',   'VIVIENDA',    5000.00, 120000.00, 12, 180,  9.0000, 11.0000, 10.0000)`);
 
+  // Rubros por cuota (patron 06 §7) para que la simulacion y los creditos nuevos de la demo los
+  // muestren. Los creditos sembrados abajo son anteriores a esta configuracion y no los llevan.
+  await tx.query(
+    `INSERT INTO tecnifin.rubros_cuota_config (codigo, nombre, base, valor, cuenta_contable)
+     VALUES ('SEGURO', 'Seguro de desgravamen', 'PORCENTAJE_SALDO', 0.0800, '259090'),
+            ('GASTOS', 'Gastos de cobranza', 'FIJO', 1.5000, '569010')`);
+
   return { productoId: producto.producto_id, tasaDpf: tasasDpf.rows.find(t => t.codigo_rango === 'R90').tasa_id };
 }
 
