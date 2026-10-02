@@ -8,7 +8,7 @@
 5. Nombres del Catálogo Único truncados a ~30 caracteres: ¿los reportes necesitan el nombre completo?
 6. ~~Contrato v3~~ Resuelto en el contrato consolidado v2 (29-sep): Christian 497 × 10, Fase 3 = migración e integración sobre la demo, pagos al final de cada mes. Falta que la hoja de flujo de caja (Anexo D.5) cuadre (marzo a 350, Christian 497).
 7. Dominio y hosting **postergados** hasta la inscripción de la sociedad (nombre reservado en Supercias: GUTT, 24-sep). Hacer `git push` de este repo y de GUTT_SYSTEM.
-8. Instalar la tarea de respaldo diario: PowerShell como administrador, `deployprogramar-respaldo.ps1 -Instalar` (deploy/README.md). Luego `npm run preflight`.
+8. Instalar la tarea de respaldo diario: PowerShell como administrador, `deploy/programar-respaldo.ps1 -Instalar` (deploy/README.md). Luego `npm run preflight`.
 9. Reestructuración de créditos (familias 1405-1408, 1415-1418, 1425-1428): con el contador, ¿se capitaliza el interés vencido?, ¿qué calificación hereda la operación y cuándo puede mejorar?, ¿requiere pago previo de la mora? Sin estas respuestas no se implementa.
 
 ## ALTO 1 — decisión provisional tomada, pendiente de aprobación expresa de Christian
