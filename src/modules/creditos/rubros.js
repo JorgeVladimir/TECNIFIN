@@ -2,16 +2,31 @@
 // cobran con cada cuota, definidos por la cooperativa en rubros_cuota_config. Todo el calculo de
 // importes en numeric (SQL), nunca en coma flotante.
 
+// Importe de un rubro r para una cuota x (x.saldo: capital con que empieza la cuota). Unica
+// formula: la usan el desembolso y la simulacion.
+const IMPORTE = `round(CASE r.base WHEN 'FIJO' THEN r.valor
+                                WHEN 'PORCENTAJE_MONTO' THEN @monto::numeric * r.valor / 100
+                                ELSE x.saldo * r.valor / 100 END, 2)`;
+
+// Rubros por cuota sin escribir nada (simulacion). cuotas: [{ numero, saldoInicial }].
+export async function simularRubros(tx, monto, cuotas) {
+  const filas = (await tx.query(
+    `SELECT x.numero, coalesce(sum(${IMPORTE}), 0)::numeric(18,2)::text AS rubros
+       FROM jsonb_to_recordset(@q::jsonb) AS x(numero int, saldo numeric)
+       LEFT JOIN tecnifin.rubros_cuota_config r ON r.activo
+      GROUP BY x.numero ORDER BY x.numero`,
+    { monto, q: JSON.stringify(cuotas.map(c => ({ numero: c.numero, saldo: c.saldoInicial }))) })).rows;
+  const detalle = (await tx.query(
+    `SELECT codigo, nombre, base, valor::text AS valor FROM tecnifin.rubros_cuota_config WHERE activo ORDER BY codigo`)).rows;
+  return { porCuota: new Map(filas.map(f => [f.numero, f.rubros])), detalle };
+}
+
 // Rubros de cada cuota al desembolsar. cuotas: [{ id, saldoInicial }] (saldo de capital con que
 // empieza la cuota). Inserta en rubros_creditos con la base y el valor vigentes hoy.
 export async function generarRubros(tx, monto, cuotas) {
   await tx.query(
     `INSERT INTO tecnifin.rubros_creditos (amortizacion_id, nombre_rubro, monto, estado, codigo, base, valor, cuenta_contable)
-     SELECT x.id, r.nombre,
-            round(CASE r.base WHEN 'FIJO' THEN r.valor
-                              WHEN 'PORCENTAJE_MONTO' THEN @monto::numeric * r.valor / 100
-                              ELSE x.saldo * r.valor / 100 END, 2),
-            'PENDIENTE', r.codigo, r.base, r.valor, r.cuenta_contable
+     SELECT x.id, r.nombre, ${IMPORTE}, 'PENDIENTE', r.codigo, r.base, r.valor, r.cuenta_contable
        FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, saldo numeric)
        CROSS JOIN tecnifin.rubros_cuota_config r
       WHERE r.activo`,

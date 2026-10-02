@@ -83,7 +83,7 @@ sin base viven en `src/modules/creditos/calculo.js`.
   una cuota VENCIDA por el proceso de cartera vuelve a VENCIDA, no a PENDIENTE (defecto corregido).
 - El cobro vive en `cobro.js` y el ciclo de otorgamiento en `servicio.js` (regla 4: 500 lineas por archivo).
 
-Pendiente de M3: scoring y mostrar los rubros en la simulacion de la solicitud (costo total). Abono en §6, rubros en §7.
+Pendiente de M3: scoring. Abono en §6, rubros en §7 (la simulacion ya muestra rubros por cuota y el costo total).
 
 ## 6. Abono extraordinario a capital (1-oct-2026, migracion 0028, `src/modules/creditos/abono.js`)
 

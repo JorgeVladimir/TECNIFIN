@@ -192,3 +192,15 @@ test('abono a capital: el seguro sobre saldo se recalcula y la anulacion lo devu
   assert.deepEqual(await tabla(), antes);
   assert.deepEqual(await rubrosDb(), [{ estado: 'PENDIENTE', n: 36 }]);
 });
+
+test('la simulacion muestra los rubros de cada cuota y el costo total para el socio', async () => {
+  const r = await llamar('/api/creditos/simulacion', { metodo: 'POST', token: t.oficial,
+    cuerpo: { lineaCredito: 'CONSUMO ORDINARIO', monto: '6000', plazo: 12 } });
+  assert.equal(r.estado, 200);
+  assert.deepEqual([r.cuerpo.cuotas[0].rubros, r.cuerpo.cuotas[0].totalConRubros], ['9.30', '550.85']);
+  const credito = await tabla();
+  assert.deepEqual(r.cuerpo.cuotas.map(q => q.rubros), credito.map(q => q.rubros), 'la simulacion y el desembolso coinciden');
+  assert.equal(r.cuerpo.totalConRubros,
+    ((Math.round(Number(r.cuerpo.totalPagar) * 100) + Math.round(Number(r.cuerpo.totalRubros) * 100)) / 100).toFixed(2));
+  assert.deepEqual(r.cuerpo.rubros.map(x => x.codigo), ['GASTOS', 'SEGURO', 'SOLCA']);
+});

@@ -12,9 +12,9 @@ import {
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { montoValido } from '../caja/servicio.js';
 import { crearCobroCreditos } from './cobro.js';
-import { generarRubros } from './rubros.js';
+import { generarRubros, simularRubros } from './rubros.js';
 import {
-  amortizacionFrancesa, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
+  amortizacionFrancesa, aTexto, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
 } from './calculo.js';
 
 const ROLES_ANALISIS = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
@@ -69,8 +69,18 @@ export function crearServicioCreditos({ db, jwt, alertar = async () => {} }) {
     const p = plazoValido(plazo);
     return analisis(token, contexto, 'SIMULACION_CREDITO', async tx => {
       const linea = await lineaValida(tx, lineaCredito, m, p);
-      return { linea: linea.linea_credito, segmento: linea.segmento, tasa: linea.tasa, plazo: p,
-        ...tablaEnTexto(amortizacionFrancesa(m, linea.tasa, p)) };
+      const tabla = amortizacionFrancesa(m, linea.tasa, p);
+      // Rubros por cuota de la cooperativa (seguro, gastos...): lo que el socio pagara de verdad.
+      const rubros = await simularRubros(tx, m, tabla.filas.map(f => ({ numero: f.numero, saldoInicial: aTexto(f.saldo + f.capital) })));
+      const texto = tablaEnTexto(tabla);
+      const cuotas = texto.cuotas.map(q => {
+        const r = rubros.porCuota.get(q.numero) || '0.00';
+        return { ...q, rubros: r, totalConRubros: aTexto(Math.round(Number(q.total) * 100) + Math.round(Number(r) * 100)) };
+      });
+      const totalRubros = aTexto(cuotas.reduce((s, q) => s + Math.round(Number(q.rubros) * 100), 0));
+      return { linea: linea.linea_credito, segmento: linea.segmento, tasa: linea.tasa, plazo: p, ...texto, cuotas,
+        totalRubros, totalConRubros: aTexto(Math.round(Number(texto.totalPagar) * 100) + Math.round(Number(totalRubros) * 100)),
+        rubros: rubros.detalle };
     });
   }
 
