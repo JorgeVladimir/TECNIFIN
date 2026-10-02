@@ -33,4 +33,5 @@
 3. Créditos: interés de mora = tasa pactada × 1,1 sobre el capital vencido, base 360 (parámetros credito.factor_mora y credito.base_dias). Confirmar con la norma vigente.
 4. Créditos: en el abono extraordinario a capital, el interés de la cuota en curso no se recalcula (el abono rige desde la cuota siguiente). Confirmar (patrón 06 §6).
 5. Cartera: devengo lineal por días del período; lo ya devengado en 1603 se queda al pasar a no devenga; en el castigo, lo devengado se reversa contra ingreso (patrón 08 §9).
+6. Créditos: cuentas de los rubros por cuota (desgravamen 259090, SOLCA 250490, gastos 5690) y que en la cancelación anticipada las cuotas futuras no paguen rubros (patrón 06 §7).
 2. Créditos: confirmar cuentas de los descuentos al desembolso (comisión 529010, fondo 330105, SOLCA 250490; la 25049005 del sistema anterior no existe en el catálogo).

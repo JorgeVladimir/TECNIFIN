@@ -12,6 +12,7 @@ import {
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { montoValido } from '../caja/servicio.js';
 import { crearCobroCreditos } from './cobro.js';
+import { generarRubros } from './rubros.js';
 import {
   amortizacionFrancesa, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
 } from './calculo.js';
@@ -235,12 +236,16 @@ export function crearServicioCreditos({ db, jwt, alertar = async () => {} }) {
           cuenta: cuenta.cuenta_id })).rows[0];
 
       const texto = (ct) => `${Math.trunc(ct / 100)}.${String(ct % 100).padStart(2, '0')}`;
-      await tx.query(
+      const ids = (await tx.query(
         `INSERT INTO tecnifin.tabla_amortizacion (credito_id, numero_cuota, fecha_pago, capital, interes, total, estado, cuenta_capital)
          SELECT @credito, x.numero, x.fecha::date, x.capital::numeric, x.interes::numeric, x.total::numeric, 'PENDIENTE', x.cuenta
-           FROM jsonb_to_recordset(@cuotas::jsonb) AS x(numero int, fecha text, capital text, interes text, total text, cuenta text)`,
+           FROM jsonb_to_recordset(@cuotas::jsonb) AS x(numero int, fecha text, capital text, interes text, total text, cuenta text)
+         RETURNING amortizacion_id, numero_cuota`,
         { credito: credito.credito_id, cuotas: JSON.stringify(cuotas.map(q => ({ numero: q.numero, fecha: q.fecha,
-          capital: texto(q.capital), interes: texto(q.interes), total: texto(q.total), cuenta: q.cuenta }))) });
+          capital: texto(q.capital), interes: texto(q.interes), total: texto(q.total), cuenta: q.cuenta }))) })).rows;
+      // Rubros por cuota (seguro, gastos...) segun la configuracion de la cooperativa.
+      const idPorCuota = new Map(ids.map(r => [r.numero_cuota, r.amortizacion_id]));
+      await generarRubros(tx, s.monto, cuotas.map(q => ({ id: idPorCuota.get(q.numero), saldoInicial: texto(q.saldo + q.capital) })));
 
       const saldo = (await tx.query(
         `UPDATE tecnifin.cuentas SET saldo = saldo + @neto::numeric WHERE cuenta_id = @cuenta RETURNING saldo::text AS saldo`,
@@ -287,8 +292,10 @@ export function crearServicioCreditos({ db, jwt, alertar = async () => {} }) {
       if (!cr) return { error: new ErrorNoEncontrado() };
       const tabla = (await tx.query(
         `SELECT numero_cuota AS numero, fecha_pago::text AS fecha, capital::text AS capital, interes::text AS interes,
-                total::text AS total, estado, cuenta_capital AS "cuentaCapital"
-           FROM tecnifin.tabla_amortizacion WHERE credito_id = @id ORDER BY numero_cuota`, { id: cr.credito_id })).rows;
+                total::text AS total, estado, cuenta_capital AS "cuentaCapital",
+                (SELECT coalesce(sum(r.monto), 0)::numeric(18,2)::text FROM tecnifin.rubros_creditos r
+                  WHERE r.amortizacion_id = ta.amortizacion_id AND r.estado <> 'ANULADO') AS rubros
+           FROM tecnifin.tabla_amortizacion ta WHERE credito_id = @id ORDER BY numero_cuota`, { id: cr.credito_id })).rows;
       return { codigo: cr.codigo, estado: cr.estado, numeroSocio: Number(cr.numero_socio), linea: cr.tipo,
         segmento: cr.segmento, monto: cr.monto, saldo: cr.saldo, tasa: cr.tasa, plazo: cr.plazo,
         fechaDesembolso: cr.desembolso, fechaVencimiento: cr.vence, tabla };

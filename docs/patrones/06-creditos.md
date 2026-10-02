@@ -47,7 +47,7 @@ sin base viven en `src/modules/creditos/calculo.js`.
 | Tasa enviada por el cliente, validada solo contra el tope | Tasa aplicable de la linea |
 | Comision 1 %, fondo 0,5 %, SOLCA 0,5 % escritos en el codigo | `descuentos_credito` por cooperativa |
 | Retencion SOLCA a la cuenta `25049005`, **que no existe en el Catalogo Unico sembrado** | La cooperativa elige la cuenta; si no existe en su plan, el desembolso da 409 sin asiento a medias |
-| Seguro 0,08 %, SOLCA por cuota y 1,50 de gastos por cuota fijos en el codigo | Pendiente: rubros por cuota como datos (siguiente parte) |
+| Seguro 0,08 %, SOLCA por cuota y 1,50 de gastos por cuota fijos en el codigo | `rubros_cuota_config` por cooperativa (§7) |
 | Solo bloqueaba al `CREDIT_OFFICER`; cualquier otro rol aprobaba y desembolsaba | Lista blanca y separacion de funciones |
 
 ## 4. Pago y anulacion de pago (parte 2, 1-oct-2026, migracion 0020)
@@ -83,7 +83,7 @@ sin base viven en `src/modules/creditos/calculo.js`.
   una cuota VENCIDA por el proceso de cartera vuelve a VENCIDA, no a PENDIENTE (defecto corregido).
 - El cobro vive en `cobro.js` y el ciclo de otorgamiento en `servicio.js` (regla 4: 500 lineas por archivo).
 
-Pendiente de M3: rubros por cuota (seguro, gastos) como datos, scoring. El abono a capital esta en §6.
+Pendiente de M3: scoring y mostrar los rubros en la simulacion de la solicitud (costo total). Abono en §6, rubros en §7.
 
 ## 6. Abono extraordinario a capital (1-oct-2026, migracion 0028, `src/modules/creditos/abono.js`)
 
@@ -109,3 +109,23 @@ Pendiente de M3: rubros por cuota (seguro, gastos) como datos, scoring. El abono
 - El proceso de cartera ya no se reversa si el **capital** de una cuota cambio despues de aplicarlo (antes solo
   miraba cuenta y estado): un abono en medio lo habria descuadrado.
 - **Contador:** confirmar que el interes de la cuota en curso no se recalcula (el abono rige desde la siguiente).
+
+## 7. Rubros por cuota (1-oct-2026, migracion 0030, `src/modules/creditos/rubros.js`)
+
+- **Configuracion por cooperativa** (`rubros_cuota_config`): codigo, nombre, `base` y `valor`, cuenta contable.
+  `FIJO` (valor por cuota), `PORCENTAJE_MONTO` (% del monto desembolsado, en cada cuota), `PORCENTAJE_SALDO`
+  (% del saldo de capital con que empieza la cuota; p. ej. desgravamen). Sin rubros configurados, todo funciona
+  igual que antes. La base nace sin rubros (regla 11): cada cooperativa carga los suyos.
+- **Desembolso:** cada cuota recibe sus rubros en `rubros_creditos` con la base y el valor de ese dia (un cambio
+  posterior de la configuracion no toca creditos ya otorgados); `total` = capital + interes + rubros. Importes en
+  numeric (SQL). `GET /api/creditos/:codigo` muestra `rubros` por cuota.
+- **Cobro:** los rubros pendientes de las cuotas cobradas van al Haber de **su** cuenta; `pagos_credito.rubros` y el
+  total los incluyen (CHECK). En la **cancelacion anticipada** la cuota en curso paga sus rubros y las futuras
+  quedan `ANULADO` (con el pago que las dejo sin efecto).
+- **Abono a capital:** los rubros `PORCENTAJE_SALDO` de las cuotas que cambian se recalculan con el saldo nuevo
+  (foto antes/despues en `cuotas_abono`); los de cuotas extinguidas quedan `ANULADO`.
+- **Anulacion:** todo rubro con el `pago_id` anulado vuelve a `PENDIENTE` y, si era un abono, a su monto anterior.
+- Las columnas fijas `seguro_desgravamen`, `contribucion_solca` y `gastos_administrativos` de la tabla quedan en 0,
+  en desuso.
+- **Contador:** confirmar las cuentas tipicas (desgravamen a 259090 por pagar a la aseguradora, SOLCA a 250490,
+  gastos a ingreso 5690) y que en la cancelacion las cuotas futuras no pagan rubros.

@@ -10,6 +10,7 @@ import {
   aTexto, CUENTA_INTERES, CUENTA_INTERES_MORA, CUENTA_INTERES_POR_COBRAR, CUENTA_SUSPENSO, CUENTA_SUSPENSO_CONTRA,
 } from './calculo.js';
 import { crearAbonoCapital, restaurarTabla } from './abono.js';
+import { cerrarRubros, reabrirRubros, rubrosPorCobrar } from './rubros.js';
 
 export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_DECISION }) {
   // Parametros de cobro por cooperativa. factor_mora: la tasa de mora es la pactada por este
@@ -47,11 +48,12 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
   // capital, interes, mora, cuenta_capital, estado }] con importes ya calculados.
   async function cobrar(tx, actor, cr, filas, { via, numeroCuenta, detalle, tipo }) {
     if (filas.some(q => !q.cuenta_capital)) throw new ErrorConflicto('El credito no tiene la cuenta contable de sus cuotas');
-    const suma = (await tx.query(
-      `SELECT sum(capital)::numeric(18,2)::text AS capital, sum(interes)::numeric(18,2)::text AS interes,
-              sum(mora)::numeric(18,2)::text AS mora, sum(capital + interes + mora)::numeric(18,2)::text AS total
-         FROM jsonb_to_recordset(@q::jsonb) AS x(capital numeric, interes numeric, mora numeric)`,
-      { q: JSON.stringify(filas.map(q => ({ capital: q.capital, interes: q.interes, mora: q.mora }))) })).rows[0];
+    // Rubros (seguro, gastos...): de las cuotas que se cobran; las futuras de una cancelacion
+    // anticipada (sinRubros) quedan sin efecto.
+    const idsCobro = filas.filter(q => !q.sinRubros).map(q => q.amortizacion_id);
+    const idsSinEfecto = filas.filter(q => q.sinRubros).map(q => q.amortizacion_id);
+    const rubros = await rubrosPorCobrar(tx, idsCobro);
+    const suma = await sumar(tx, filas, rubros.total);
     const c = cr.codigo;
     const { cuentaDebito, transaccionId, cuentaId, comprobante, saldoCuenta } = await debitarOrigen(tx, actor, cr, suma.total,
       { via, numeroCuenta, detalle, concepto: `${tipo === 'CANCELACION' ? 'Cancelacion' : 'Pago'} del credito ${c}` });
@@ -65,15 +67,17 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
         ...filas.map(q => ({ codigo: q.cuenta_capital, tipo: 'H', valor: q.capital, socioId: cr.socio_id })),
         ...lineasInteres(cr, filas, suma.interes),
         { codigo: CUENTA_INTERES_MORA, tipo: 'H', valor: suma.mora, socioId: cr.socio_id },
+        ...rubros.porCuenta.map(r => ({ codigo: r.codigo, tipo: 'H', valor: r.valor, socioId: cr.socio_id })),
       ] });
     await enlazarOrigen(tx, actor, { transaccionId, cuentaId, saldoCuenta, total: suma.total, glosa, asiento });
     const pago = (await tx.query(
-      `INSERT INTO tecnifin.pagos_credito (credito_id, cuota_desde, cuota_hasta, capital, interes, mora, total, origen, tipo,
+      `INSERT INTO tecnifin.pagos_credito (credito_id, cuota_desde, cuota_hasta, capital, interes, mora, rubros, total, origen, tipo,
                                           transaccion_caja_id, cuenta_id, asiento_id, usuario_id)
-       VALUES (@credito, @desde, @hasta, @capital::numeric, @interes::numeric, @mora::numeric, @total::numeric, @origen, @tipo,
-               @t, @cuenta, @a, @usuario)
+       VALUES (@credito, @desde, @hasta, @capital::numeric, @interes::numeric, @mora::numeric, @rubros::numeric, @total::numeric,
+               @origen, @tipo, @t, @cuenta, @a, @usuario)
        RETURNING pago_id, numero_pago`,
-      { credito: cr.credito_id, desde, hasta, capital: suma.capital, interes: suma.interes, mora: suma.mora, total: suma.total,
+      { credito: cr.credito_id, desde, hasta, capital: suma.capital, interes: suma.interes, mora: suma.mora, rubros: suma.rubros,
+        total: suma.total,
         origen: via, tipo, t: transaccionId, cuenta: cuentaId, a: asiento, usuario: actor.usuario_id })).rows[0];
     await tx.query(
       `UPDATE tecnifin.tabla_amortizacion ta
@@ -81,6 +85,7 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
          FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, interes numeric, mora numeric)
         WHERE ta.amortizacion_id = x.id`,
       { pago: pago.pago_id, q: JSON.stringify(filas.map(q => ({ id: q.amortizacion_id, interes: q.interes, mora: q.mora }))) });
+    await cerrarRubros(tx, pago.pago_id, idsCobro, idsSinEfecto);
     const credito = (await tx.query(
       `UPDATE tecnifin.creditos
           SET saldo = saldo - @capital::numeric,
@@ -91,8 +96,18 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
       entidadTipo: 'CREDITO', entidadId: c, campo: 'saldo', nuevo: credito.saldo,
       detalle: `Pago ${pago.numero_pago} por ${via}: ${suma.total} (mora ${suma.mora}).` });
     return { pago: Number(pago.numero_pago), credito: c, tipo, cuotas: [desde, hasta], capital: suma.capital,
-      interes: suma.interes, mora: suma.mora, total: suma.total, origen: via, comprobante, saldoCredito: credito.saldo,
+      interes: suma.interes, mora: suma.mora, rubros: suma.rubros, total: suma.total, origen: via, comprobante, saldoCredito: credito.saldo,
       estadoCredito: credito.estado };
+  }
+
+  // Totales de un cobro en numeric: capital, interes, mora, rubros y total.
+  async function sumar(tx, filas, rubros) {
+    return (await tx.query(
+      `SELECT sum(capital)::numeric(18,2)::text AS capital, sum(interes)::numeric(18,2)::text AS interes,
+              sum(mora)::numeric(18,2)::text AS mora, @r::numeric(18,2)::text AS rubros,
+              (sum(capital + interes + mora) + @r::numeric)::numeric(18,2)::text AS total
+         FROM jsonb_to_recordset(@q::jsonb) AS x(capital numeric, interes numeric, mora numeric)`,
+      { r: rubros, q: JSON.stringify(filas.map(q => ({ capital: q.capital, interes: q.interes, mora: q.mora }))) })).rows[0];
   }
 
   // Interes cobrado: lo ya devengado sale de intereses por cobrar (1603) y el resto va a
@@ -225,10 +240,11 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
         interes = (await tx.query(
           `SELECT least(round(@saldo::numeric / 100 * @tasa::numeric / 100 * @dias / @base::numeric, 2), @max::numeric)::text AS i`,
           { saldo: noVencido, tasa: cr.tasa, dias: q.dias_corridos, base: q.base, max: q.interes })).rows[0].i;
-      } else if (q.futura) {
-        interes = '0.00';
       }
-      filas.push({ ...q, interes });
+      // Cuota futura (aun no empieza): sin interes ni rubros. La en curso paga sus rubros.
+      const sinRubros = q.futura && !q.en_curso;
+      if (sinRubros) interes = '0.00';
+      filas.push({ ...q, interes, sinRubros });
     }
     return filas;
   }
@@ -240,11 +256,8 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
       if (!cr) return { error: new ErrorNoEncontrado() };
       if (cr.estado !== 'VIGENTE') throw new ErrorConflicto(`El credito esta ${cr.estado}`);
       const filas = await calcularCancelacion(tx, cr);
-      const t = (await tx.query(
-        `SELECT sum(capital)::numeric(18,2)::text AS capital, sum(interes)::numeric(18,2)::text AS interes,
-                sum(mora)::numeric(18,2)::text AS mora, sum(capital + interes + mora)::numeric(18,2)::text AS total
-           FROM jsonb_to_recordset(@q::jsonb) AS x(capital numeric, interes numeric, mora numeric)`,
-        { q: JSON.stringify(filas.map(q => ({ capital: q.capital, interes: q.interes, mora: q.mora }))) })).rows[0];
+      const rubros = await rubrosPorCobrar(tx, filas.filter(q => !q.sinRubros).map(q => q.amortizacion_id));
+      const t = await sumar(tx, filas, rubros.total);
       return { credito: c, cuotas: filas.length, ...t };
     });
   }
@@ -327,6 +340,7 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
           { cuenta: p.cuenta_id, total: p.total_t, saldo: p.saldoCuenta, concepto: glosa.slice(0, 200),
             usuario: actor.usuario_id, a: asiento });
       }
+      await reabrirRubros(tx, p.pago_id);
       if (esAbono) await restaurarTabla(tx, p.cuotas_abono, 'antes');
       else {
         await tx.query(

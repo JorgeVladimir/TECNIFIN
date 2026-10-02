@@ -8,6 +8,7 @@ import {
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { aTexto, recalcularTrasAbono } from './calculo.js';
+import { cerrarRubros, fijarMontosRubros, rubrosTrasAbono } from './rubros.js';
 
 const MODALIDADES = ['REDUCIR_CUOTA', 'REDUCIR_PLAZO'];
 const centavos = (texto) => {
@@ -18,11 +19,13 @@ const centavos = (texto) => {
 // Deja cada cuota con sus valores de "antes" o "despues" (foto guardada en el abono) y
 // recalcula el vencimiento final del credito con las cuotas que siguen existiendo.
 export async function restaurarTabla(tx, cambios, lado) {
+  await fijarMontosRubros(tx, cambios.flatMap(c => c.rubros || []), lado);
   const filas = (await tx.query(
     `UPDATE tecnifin.tabla_amortizacion ta
         SET capital = (x.v->>'capital')::numeric, interes = (x.v->>'interes')::numeric,
             total = (x.v->>'capital')::numeric + (x.v->>'interes')::numeric
-                    + ta.seguro_desgravamen + ta.contribucion_solca + ta.gastos_administrativos,
+                    + coalesce((SELECT sum(r.monto) FROM tecnifin.rubros_creditos r
+                                 WHERE r.amortizacion_id = ta.amortizacion_id AND r.estado <> 'ANULADO'), 0),
             cuenta_capital = x.v->>'cuenta', estado = x.v->>'estado'
        FROM (SELECT (e->>'id')::bigint AS id, e->(@lado::text) AS v FROM jsonb_array_elements(@q::jsonb) AS e) AS x
       WHERE ta.amortizacion_id = x.id
@@ -62,18 +65,23 @@ export function crearAbonoCapital({ conRoles, codigoValido, ROLES_COBRO, bloquea
     if (resto.some(q => !q.cuenta_capital)) throw new ErrorConflicto('El credito no tiene la cuenta contable de sus cuotas');
     let filas;
     try {
-      filas = recalcularTrasAbono(aTexto(capitalResto - abono), cr.tasa, resto.length, modo, resto[0].total);
+      // La cuota que se conserva es capital + interes (el total incluye los rubros).
+      const cuota = aTexto(centavos(resto[0].capital) + centavos(resto[0].interes));
+      filas = recalcularTrasAbono(aTexto(capitalResto - abono), cr.tasa, resto.length, modo, cuota);
     } catch (e) {
       throw new ErrorConflicto(`No se puede recalcular la tabla: ${e.message}`);
     }
     const cambios = resto.map((q, k) => {
       const f = filas[k];
-      return { id: Number(q.amortizacion_id), numero: q.numero_cuota, fecha: q.fecha,
+      return { id: Number(q.amortizacion_id), numero: q.numero_cuota, fecha: q.fecha, saldoNuevo: f ? aTexto(f.saldo + f.capital) : null,
         antes: { capital: q.capital, interes: q.interes, cuenta: q.cuenta_capital, estado: q.estado },
         despues: f
           ? { capital: aTexto(f.capital), interes: aTexto(f.interes), cuenta: q.cuenta_capital, estado: q.estado }
           : { capital: '0.00', interes: '0.00', cuenta: q.cuenta_capital, estado: 'EXTINGUIDA' } };
     });
+    // Rubros sobre saldo de cada cuota que sigue viva, con su saldo nuevo (foto para anular).
+    const rubros = await rubrosTrasAbono(tx, cambios);
+    for (const x of cambios) x.rubros = rubros.filter(r => String(r.cuota) === String(x.id)).map(({ cuota, ...r }) => r);
     const interesAntes = resto.reduce((s, q) => s + centavos(q.interes), 0);
     const interesDespues = filas.reduce((s, f) => s + (f ? f.interes : 0), 0);
     return { cambios, ahorroInteres: aTexto(interesAntes - interesDespues),
@@ -129,10 +137,11 @@ export function crearAbonoCapital({ conRoles, codigoValido, ROLES_COBRO, bloquea
                                             modalidad, cuotas_abono, transaccion_caja_id, cuenta_id, asiento_id, usuario_id)
          VALUES (@credito, @desde, @hasta, @total::numeric, 0, 0, @total::numeric, @origen, 'ABONO',
                  @modo, @cambios::jsonb, @t, @cuenta, @a, @usuario)
-         RETURNING numero_pago`,
+         RETURNING pago_id, numero_pago`,
         { credito: cr.credito_id, desde: plan.cambios[0].numero, hasta: plan.cambios.at(-1).numero, total, origen: via, modo,
           cambios: JSON.stringify(plan.cambios), t: origen.transaccionId, cuenta: origen.cuentaId, a: asiento,
           usuario: actor.usuario_id })).rows[0];
+      await cerrarRubros(tx, pago.pago_id, [], plan.cambios.filter(x => x.despues.estado === 'EXTINGUIDA').map(x => x.id));
       await restaurarTabla(tx, plan.cambios, 'despues');
       const credito = (await tx.query(
         `UPDATE tecnifin.creditos SET saldo = saldo - @total::numeric WHERE credito_id = @id
