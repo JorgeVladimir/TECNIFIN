@@ -220,6 +220,10 @@ async function rutasCartera(cartera, req, res, url, contexto) {
       ? responder(res, 201, await cartera.recuperar(token, castigo[1], cuerpo, contexto), solicitudId)
       : responder(res, 201, await cartera.castigar(token, castigo[1], cuerpo, contexto), solicitudId);
   }
+  if (p === '/api/cartera/cierre-mensual' && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 201, await cartera.cierreMensual(token, await leerJson(req), contexto), solicitudId);
+  }
   if (p === '/api/cartera/devengo') {
     if (req.method === 'GET') {
       return responder(res, 200, await cartera.simularDevengo(tokenBearer(req), url.searchParams.get('fecha'), contexto), solicitudId);

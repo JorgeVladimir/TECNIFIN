@@ -206,86 +206,90 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
   // Simula por defecto; aplicar es explicito y solo para supervisores.
   async function procesar(token, { fechaCorte, aplicar = false } = {}, contexto = {}) {
     const roles = aplicar === true ? ROLES_APLICA : ROLES_CONSULTA;
-    return conRoles(token, contexto, roles, aplicar === true ? 'APLICAR_CARTERA' : 'SIMULAR_CARTERA', async (tx, actor) => {
-      const corte = await fechaCorteValida(tx, fechaCorte);
-      if (aplicar === true) {
-        // Un proceso a la vez por cooperativa: el bloqueo evita dos aplicaciones cruzadas.
-        await tx.query(`SELECT pg_advisory_xact_lock(hashtext('cartera:' || tecnifin.cooperativa_actual()))`);
-        const posterior = (await tx.query(
-          `SELECT fecha_corte::text AS f FROM tecnifin.reclasificacion_cartera
-            WHERE estado = 'APLICADO' AND fecha_corte >= @c::date AND reversa_de_proceso_id IS NULL`, { c: corte })).rows[0];
-        if (posterior) throw new ErrorConflicto(`Ya hay un proceso aplicado con corte ${posterior.f}`);
-      }
-      const p = await preparar(tx, corte);
-      if (aplicar === true && p.bloqueos.length) throw new ErrorConflicto(p.bloqueos.join(' '));
+    return conRoles(token, contexto, roles, aplicar === true ? 'APLICAR_CARTERA' : 'SIMULAR_CARTERA',
+      (tx, actor) => ejecutarProceso(tx, actor, fechaCorte, aplicar));
+  }
 
-      const requerida = p.c.provisiones.reduce((s, x) => s + x.requerida, 0);
-      const constituida = p.provisiones.reduce((s, x) => s + x.constituida, 0);
-      const ajusteTotal = p.ajustes.reduce((s, a) => s + a.ajuste, 0);
-      const proceso = (await tx.query(
-        `INSERT INTO tecnifin.reclasificacion_cartera (fecha_corte, estado, usuario_id, operaciones_evaluadas, monto_reclasificado,
-                                                       cartera_bruta, cartera_improductiva, provision_requerida,
-                                                       provision_constituida, provision_contabilizada)
-         VALUES (@corte::date, 'SIMULADO', @u, @ops, @reclas::numeric, @bruta::numeric, @improd::numeric, @req::numeric,
-                 @cons::numeric, 0) RETURNING proceso_id`,
-        { corte, u: actor.usuario_id, ops: p.c.totales.operaciones,
-          reclas: aTexto(p.grupos.reduce((s, g) => s + g.monto, 0)), bruta: aTexto(p.c.totales.carteraBruta),
-          improd: aTexto(p.c.totales.improductiva), req: aTexto(requerida), cons: aTexto(constituida) })).rows[0].proceso_id;
-      for (const g of p.grupos) {
-        await tx.query(
-          `INSERT INTO tecnifin.reclasificacion_cartera_detalle (proceso_id, tipo, cuenta_origen, cuenta_destino, operaciones, monto)
-           VALUES (@p, 'RECLASIFICACION', @o, @d, @n, @m::numeric)`,
-          { p: proceso, o: g.origen, d: g.destino, n: g.creditos.size, m: aTexto(g.monto) });
-      }
-      for (const a of p.ajustes) {
-        await tx.query(
-          `INSERT INTO tecnifin.reclasificacion_cartera_detalle (proceso_id, tipo, segmento, cuenta_destino, operaciones, monto)
-           VALUES (@p, 'PROVISION', @s, @c, @n, @m::numeric)`,
-          { p: proceso, s: a.segmento, c: a.cuentaProvision, n: a.operaciones, m: aTexto(a.ajuste) });
-      }
-      if (aplicar !== true) return resumen(p, { proceso: Number(proceso), estado: 'SIMULADO' });
+  // Cuerpo del proceso dentro de una transaccion ya autorizada (lo reutiliza el cierre mensual).
+  async function ejecutarProceso(tx, actor, fechaCorte, aplicar) {
+    const corte = await fechaCorteValida(tx, fechaCorte);
+    if (aplicar === true) {
+      // Un proceso a la vez por cooperativa: el bloqueo evita dos aplicaciones cruzadas.
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext('cartera:' || tecnifin.cooperativa_actual()))`);
+      const posterior = (await tx.query(
+        `SELECT fecha_corte::text AS f FROM tecnifin.reclasificacion_cartera
+          WHERE estado = 'APLICADO' AND fecha_corte >= @c::date AND reversa_de_proceso_id IS NULL`, { c: corte })).rows[0];
+      if (posterior) throw new ErrorConflicto(`Ya hay un proceso aplicado con corte ${posterior.f}`);
+    }
+    const p = await preparar(tx, corte);
+    if (aplicar === true && p.bloqueos.length) throw new ErrorConflicto(p.bloqueos.join(' '));
 
-      // Aplicar: un asiento con la reclasificacion y el ajuste de provisiones.
-      const lineas = [];
-      for (const g of p.grupos) {
-        lineas.push({ codigo: g.destino, tipo: 'D', valor: aTexto(g.monto) }, { codigo: g.origen, tipo: 'H', valor: aTexto(g.monto) });
-      }
-      for (const a of p.ajustes) {
-        const v = aTexto(Math.abs(a.ajuste));
-        if (a.ajuste > 0) lineas.push({ codigo: GASTO_PROVISION[a.segmento], tipo: 'D', valor: v }, { codigo: a.cuentaProvision, tipo: 'H', valor: v });
-        else lineas.push({ codigo: a.cuentaProvision, tipo: 'D', valor: v }, { codigo: CUENTA_REVERSION_PROVISION, tipo: 'H', valor: v });
-      }
-      let asiento = null;
-      if (lineas.length) {
-        asiento = await asentar(tx, actor, { concepto: `Proceso de cartera al ${corte}`, origenModulo: 'CREDITOS',
-          origenId: `CARTERA-${proceso}`, tipoDocumento: 'PROCESO_CARTERA', lineas });
-      }
-      for (const m of p.c.movimientos) {
-        await tx.query(
-          `INSERT INTO tecnifin.reclasificacion_cuota (proceso_id, amortizacion_id, cuenta_anterior, cuenta_nueva, estado_anterior,
-                                                      estado_nuevo, capital)
-           VALUES (@p, @a, @o, @d, @ea, @en, @c::numeric)`,
-          { p: proceso, a: m.amortizacionId, o: m.origen, d: m.destino, ea: m.estadoAnterior, en: m.estadoNuevo, c: aTexto(m.capital) });
-        await tx.query(`UPDATE tecnifin.tabla_amortizacion SET cuenta_capital = @d, estado = @e WHERE amortizacion_id = @a`,
-          { d: m.destino, e: m.estadoNuevo, a: m.amortizacionId });
-      }
-      for (const o of p.c.operaciones) {
-        await tx.query(
-          `INSERT INTO tecnifin.calificacion_cartera (credito_id, fecha_corte, saldo_capital, dias_mora, categoria,
-                                                     porcentaje_provision, valor_provision)
-           VALUES (@c, @f::date, @s::numeric, @d, @cat, @pct::numeric, @v::numeric)
-           ON CONFLICT (cooperativa_id, credito_id, fecha_corte) DO UPDATE
-             SET saldo_capital = EXCLUDED.saldo_capital, dias_mora = EXCLUDED.dias_mora, categoria = EXCLUDED.categoria,
-                 porcentaje_provision = EXCLUDED.porcentaje_provision, valor_provision = EXCLUDED.valor_provision`,
-          { c: o.creditoId, f: corte, s: aTexto(o.saldo), d: o.diasMora, cat: o.calificacion, pct: o.porcentaje, v: aTexto(o.provision) });
-      }
+    const requerida = p.c.provisiones.reduce((s, x) => s + x.requerida, 0);
+    const constituida = p.provisiones.reduce((s, x) => s + x.constituida, 0);
+    const ajusteTotal = p.ajustes.reduce((s, a) => s + a.ajuste, 0);
+    const proceso = (await tx.query(
+      `INSERT INTO tecnifin.reclasificacion_cartera (fecha_corte, estado, usuario_id, operaciones_evaluadas, monto_reclasificado,
+                                                     cartera_bruta, cartera_improductiva, provision_requerida,
+                                                     provision_constituida, provision_contabilizada)
+       VALUES (@corte::date, 'SIMULADO', @u, @ops, @reclas::numeric, @bruta::numeric, @improd::numeric, @req::numeric,
+               @cons::numeric, 0) RETURNING proceso_id`,
+      { corte, u: actor.usuario_id, ops: p.c.totales.operaciones,
+        reclas: aTexto(p.grupos.reduce((s, g) => s + g.monto, 0)), bruta: aTexto(p.c.totales.carteraBruta),
+        improd: aTexto(p.c.totales.improductiva), req: aTexto(requerida), cons: aTexto(constituida) })).rows[0].proceso_id;
+    for (const g of p.grupos) {
       await tx.query(
-        `UPDATE tecnifin.reclasificacion_cartera SET estado = 'APLICADO', asiento_id = @a, provision_contabilizada = @pc::numeric
-          WHERE proceso_id = @p`, { a: asiento, pc: aTexto(ajusteTotal), p: proceso });
-      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'APLICAR_CARTERA', entidadTipo: 'PROCESO_CARTERA',
-        entidadId: proceso, detalle: `Corte ${corte}: ${p.c.movimientos.length} cuotas reclasificadas, ajuste de provision ${aTexto(ajusteTotal)}.` });
-      return resumen(p, { proceso: Number(proceso), estado: 'APLICADO' });
-    });
+        `INSERT INTO tecnifin.reclasificacion_cartera_detalle (proceso_id, tipo, cuenta_origen, cuenta_destino, operaciones, monto)
+         VALUES (@p, 'RECLASIFICACION', @o, @d, @n, @m::numeric)`,
+        { p: proceso, o: g.origen, d: g.destino, n: g.creditos.size, m: aTexto(g.monto) });
+    }
+    for (const a of p.ajustes) {
+      await tx.query(
+        `INSERT INTO tecnifin.reclasificacion_cartera_detalle (proceso_id, tipo, segmento, cuenta_destino, operaciones, monto)
+         VALUES (@p, 'PROVISION', @s, @c, @n, @m::numeric)`,
+        { p: proceso, s: a.segmento, c: a.cuentaProvision, n: a.operaciones, m: aTexto(a.ajuste) });
+    }
+    if (aplicar !== true) return resumen(p, { proceso: Number(proceso), estado: 'SIMULADO' });
+
+    // Aplicar: un asiento con la reclasificacion y el ajuste de provisiones.
+    const lineas = [];
+    for (const g of p.grupos) {
+      lineas.push({ codigo: g.destino, tipo: 'D', valor: aTexto(g.monto) }, { codigo: g.origen, tipo: 'H', valor: aTexto(g.monto) });
+    }
+    for (const a of p.ajustes) {
+      const v = aTexto(Math.abs(a.ajuste));
+      if (a.ajuste > 0) lineas.push({ codigo: GASTO_PROVISION[a.segmento], tipo: 'D', valor: v }, { codigo: a.cuentaProvision, tipo: 'H', valor: v });
+      else lineas.push({ codigo: a.cuentaProvision, tipo: 'D', valor: v }, { codigo: CUENTA_REVERSION_PROVISION, tipo: 'H', valor: v });
+    }
+    let asiento = null;
+    if (lineas.length) {
+      asiento = await asentar(tx, actor, { concepto: `Proceso de cartera al ${corte}`, origenModulo: 'CREDITOS',
+        origenId: `CARTERA-${proceso}`, tipoDocumento: 'PROCESO_CARTERA', lineas });
+    }
+    for (const m of p.c.movimientos) {
+      await tx.query(
+        `INSERT INTO tecnifin.reclasificacion_cuota (proceso_id, amortizacion_id, cuenta_anterior, cuenta_nueva, estado_anterior,
+                                                    estado_nuevo, capital)
+         VALUES (@p, @a, @o, @d, @ea, @en, @c::numeric)`,
+        { p: proceso, a: m.amortizacionId, o: m.origen, d: m.destino, ea: m.estadoAnterior, en: m.estadoNuevo, c: aTexto(m.capital) });
+      await tx.query(`UPDATE tecnifin.tabla_amortizacion SET cuenta_capital = @d, estado = @e WHERE amortizacion_id = @a`,
+        { d: m.destino, e: m.estadoNuevo, a: m.amortizacionId });
+    }
+    for (const o of p.c.operaciones) {
+      await tx.query(
+        `INSERT INTO tecnifin.calificacion_cartera (credito_id, fecha_corte, saldo_capital, dias_mora, categoria,
+                                                   porcentaje_provision, valor_provision)
+         VALUES (@c, @f::date, @s::numeric, @d, @cat, @pct::numeric, @v::numeric)
+         ON CONFLICT (cooperativa_id, credito_id, fecha_corte) DO UPDATE
+           SET saldo_capital = EXCLUDED.saldo_capital, dias_mora = EXCLUDED.dias_mora, categoria = EXCLUDED.categoria,
+               porcentaje_provision = EXCLUDED.porcentaje_provision, valor_provision = EXCLUDED.valor_provision`,
+        { c: o.creditoId, f: corte, s: aTexto(o.saldo), d: o.diasMora, cat: o.calificacion, pct: o.porcentaje, v: aTexto(o.provision) });
+    }
+    await tx.query(
+      `UPDATE tecnifin.reclasificacion_cartera SET estado = 'APLICADO', asiento_id = @a, provision_contabilizada = @pc::numeric
+        WHERE proceso_id = @p`, { a: asiento, pc: aTexto(ajusteTotal), p: proceso });
+    await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'APLICAR_CARTERA', entidadTipo: 'PROCESO_CARTERA',
+      entidadId: proceso, detalle: `Corte ${corte}: ${p.c.movimientos.length} cuotas reclasificadas, ajuste de provision ${aTexto(ajusteTotal)}.` });
+    return resumen(p, { proceso: Number(proceso), estado: 'APLICADO' });
   }
 
   // Reversion exacta del ultimo proceso aplicado: cuotas a su cuenta y estado anteriores y
@@ -432,5 +436,21 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { consultar, procesar, reversar, castigar, recuperar, ...crearDevengo({ conRoles, saldosContables, fechaCorteValida }) };
+  const { aplicarDevengoEn, ...devengo } = crearDevengo({ conRoles, saldosContables, fechaCorteValida });
+
+  // Cierre mensual de cartera: devengo de intereses y proceso de cartera (reclasificacion,
+  // calificacion y provisiones) al mismo corte, en UNA transaccion: o queda todo o nada. Cada
+  // parte se puede reversar por separado (primero la cartera, luego el devengo).
+  async function cierreMensual(token, { fechaCorte } = {}, contexto = {}) {
+    return conRoles(token, contexto, ROLES_APLICA, 'CIERRE_CARTERA', async (tx, actor) => {
+      const corte = await fechaCorteValida(tx, fechaCorte);
+      const intereses = await aplicarDevengoEn(tx, actor, corte);
+      const cartera = await ejecutarProceso(tx, actor, corte, true);
+      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'CIERRE_CARTERA', entidadTipo: 'PROCESO_CARTERA',
+        entidadId: cartera.proceso, detalle: `Corte ${corte}: devengo ${intereses.proceso}, cartera ${cartera.proceso}.` });
+      return { fechaCorte: corte, devengo: intereses, cartera };
+    });
+  }
+
+  return { consultar, procesar, reversar, castigar, recuperar, ...devengo, cierreMensual };
 }

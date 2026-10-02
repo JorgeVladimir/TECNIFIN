@@ -81,47 +81,50 @@ export function crearDevengo({ conRoles, saldosContables, fechaCorteValida }) {
   }
 
   async function aplicarDevengo(token, { fechaCorte } = {}, contexto = {}) {
-    return conRoles(token, contexto, ROLES_APLICA, 'DEVENGO_INTERESES', async (tx, actor) => {
-      await tx.query(`SELECT pg_advisory_xact_lock(hashtext('cartera:' || tecnifin.cooperativa_actual()))`);
-      const corte = await fechaCorteValida(tx, fechaCorte);
-      const ultimo = (await tx.query(
-        `SELECT max(fecha_corte)::text AS f FROM tecnifin.devengo_intereses WHERE estado = 'APLICADO'`)).rows[0].f;
-      if (ultimo && corte < ultimo) throw new ErrorConflicto(`Ya hay un devengo aplicado al ${ultimo}`);
-      const diferencias = await control(tx);
-      if (diferencias.length) {
-        throw new ErrorConflicto(`El mayor de intereses no cuadra con las cuotas: ${diferencias.map(d => `${d.cuenta} ${d.contable} vs ${d.cuotas}`).join('; ')}`);
+    return conRoles(token, contexto, ROLES_APLICA, 'DEVENGO_INTERESES', (tx, actor) => aplicarDevengoEn(tx, actor, fechaCorte));
+  }
+
+  // Cuerpo del devengo dentro de una transaccion ya autorizada (lo reutiliza el cierre mensual).
+  async function aplicarDevengoEn(tx, actor, fechaCorte) {
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtext('cartera:' || tecnifin.cooperativa_actual()))`);
+    const corte = await fechaCorteValida(tx, fechaCorte);
+    const ultimo = (await tx.query(
+      `SELECT max(fecha_corte)::text AS f FROM tecnifin.devengo_intereses WHERE estado = 'APLICADO'`)).rows[0].f;
+    if (ultimo && corte < ultimo) throw new ErrorConflicto(`Ya hay un devengo aplicado al ${ultimo}`);
+    const diferencias = await control(tx);
+    if (diferencias.length) {
+      throw new ErrorConflicto(`El mayor de intereses no cuadra con las cuotas: ${diferencias.map(d => `${d.cuenta} ${d.contable} vs ${d.cuotas}`).join('; ')}`);
+    }
+    const c = await calcular(tx, corte);
+    let asiento = null;
+    if (c.devengado + c.suspenso > 0) {
+      const lineas = [];
+      for (const [seg, v] of Object.entries(c.porSegmento)) {
+        lineas.push(
+          { codigo: CUENTA_INTERES_POR_COBRAR[seg], tipo: 'D', valor: aTexto(v.devengado) },
+          { codigo: CUENTA_INTERES[seg], tipo: 'H', valor: aTexto(v.devengado) },
+          { codigo: CUENTA_SUSPENSO[seg], tipo: 'D', valor: aTexto(v.suspenso) },
+          { codigo: CUENTA_SUSPENSO_CONTRA[seg], tipo: 'H', valor: aTexto(v.suspenso) });
       }
-      const c = await calcular(tx, corte);
-      let asiento = null;
-      if (c.devengado + c.suspenso > 0) {
-        const lineas = [];
-        for (const [seg, v] of Object.entries(c.porSegmento)) {
-          lineas.push(
-            { codigo: CUENTA_INTERES_POR_COBRAR[seg], tipo: 'D', valor: aTexto(v.devengado) },
-            { codigo: CUENTA_INTERES[seg], tipo: 'H', valor: aTexto(v.devengado) },
-            { codigo: CUENTA_SUSPENSO[seg], tipo: 'D', valor: aTexto(v.suspenso) },
-            { codigo: CUENTA_SUSPENSO_CONTRA[seg], tipo: 'H', valor: aTexto(v.suspenso) });
-        }
-        asiento = await asentar(tx, actor, { concepto: `Devengo de intereses de cartera al ${corte}`, origenModulo: 'CREDITOS',
-          origenId: `DEVENGO-${corte}`, tipoDocumento: 'DEVENGO_INTERESES', lineas });
-      }
-      const proceso = (await tx.query(
-        `INSERT INTO tecnifin.devengo_intereses (fecha_corte, devengado, suspenso, asiento_id, usuario_id)
-         VALUES (@corte::date, @d::numeric, @s::numeric, @a, @u) RETURNING proceso_id`,
-        { corte, d: aTexto(c.devengado), s: aTexto(c.suspenso), a: asiento, u: actor.usuario_id })).rows[0].proceso_id;
-      const filas = JSON.stringify(c.cuotas.map(q => ({ id: q.amortizacion_id,
-        d: q.no_devenga ? '0' : q.delta, s: q.no_devenga ? q.delta : '0' })));
-      await tx.query(
-        `INSERT INTO tecnifin.devengo_cuota (proceso_id, amortizacion_id, devengado, suspenso)
-         SELECT @p, x.id, x.d, x.s FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, d numeric, s numeric)`, { p: proceso, q: filas });
-      await tx.query(
-        `UPDATE tecnifin.tabla_amortizacion ta
-            SET interes_devengado = ta.interes_devengado + x.d, interes_suspenso = ta.interes_suspenso + x.s
-           FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, d numeric, s numeric) WHERE ta.amortizacion_id = x.id`, { q: filas });
-      await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'DEVENGAR', entidadTipo: 'PROCESO_DEVENGO',
-        entidadId: proceso, detalle: `Corte ${corte}: devengado ${aTexto(c.devengado)}, suspenso ${aTexto(c.suspenso)}.` });
-      return { proceso: Number(proceso), estado: 'APLICADO', asiento: asiento && Number(asiento), ...resumen(corte, c) };
-    });
+      asiento = await asentar(tx, actor, { concepto: `Devengo de intereses de cartera al ${corte}`, origenModulo: 'CREDITOS',
+        origenId: `DEVENGO-${corte}`, tipoDocumento: 'DEVENGO_INTERESES', lineas });
+    }
+    const proceso = (await tx.query(
+      `INSERT INTO tecnifin.devengo_intereses (fecha_corte, devengado, suspenso, asiento_id, usuario_id)
+       VALUES (@corte::date, @d::numeric, @s::numeric, @a, @u) RETURNING proceso_id`,
+      { corte, d: aTexto(c.devengado), s: aTexto(c.suspenso), a: asiento, u: actor.usuario_id })).rows[0].proceso_id;
+    const filas = JSON.stringify(c.cuotas.map(q => ({ id: q.amortizacion_id,
+      d: q.no_devenga ? '0' : q.delta, s: q.no_devenga ? q.delta : '0' })));
+    await tx.query(
+      `INSERT INTO tecnifin.devengo_cuota (proceso_id, amortizacion_id, devengado, suspenso)
+       SELECT @p, x.id, x.d, x.s FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, d numeric, s numeric)`, { p: proceso, q: filas });
+    await tx.query(
+      `UPDATE tecnifin.tabla_amortizacion ta
+          SET interes_devengado = ta.interes_devengado + x.d, interes_suspenso = ta.interes_suspenso + x.s
+         FROM jsonb_to_recordset(@q::jsonb) AS x(id bigint, d numeric, s numeric) WHERE ta.amortizacion_id = x.id`, { q: filas });
+    await auditarProceso(tx, actor, { proceso: 'CREDITOS', accion: 'DEVENGAR', entidadTipo: 'PROCESO_DEVENGO',
+      entidadId: proceso, detalle: `Corte ${corte}: devengado ${aTexto(c.devengado)}, suspenso ${aTexto(c.suspenso)}.` });
+    return { proceso: Number(proceso), estado: 'APLICADO', asiento: asiento && Number(asiento), ...resumen(corte, c) };
   }
 
   // Reversion exacta del ultimo devengo aplicado, solo si ninguna de sus cuotas se cobro,
@@ -166,5 +169,5 @@ export function crearDevengo({ conRoles, saldosContables, fechaCorteValida }) {
     });
   }
 
-  return { simularDevengo, aplicarDevengo, reversarDevengo };
+  return { simularDevengo, aplicarDevengo, aplicarDevengoEn, reversarDevengo };
 }

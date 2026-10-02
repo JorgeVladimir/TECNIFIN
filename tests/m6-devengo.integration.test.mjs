@@ -201,3 +201,23 @@ test('otra cooperativa no tiene nada que devengar', async () => {
   const r = await llamar('/api/cartera/devengo', { token: tB });
   assert.deepEqual([r.estado, r.cuerpo.cuotas, r.cuerpo.devengado], [200, 0, '0.00']);
 });
+
+test('cierre mensual: devengo y proceso de cartera en una sola transaccion, y nada si algo falla', async () => {
+  const procesos = async () => (await withTenant(coopA.cooperativa_id, tx => tx.query(
+    `SELECT (SELECT count(*) FROM tecnifin.devengo_intereses)::int AS devengos,
+            (SELECT count(*) FROM tecnifin.reclasificacion_cartera WHERE estado = 'APLICADO')::int AS carteras`))).rows[0];
+  assert.equal((await llamar('/api/cartera/cierre-mensual', { metodo: 'POST', token: t.oficial, cuerpo: {} })).estado, 403);
+  const antes = await procesos();
+  const r = await llamar('/api/cartera/cierre-mensual', { metodo: 'POST', token: t.gerente, cuerpo: {} });
+  assert.equal(r.estado, 201, JSON.stringify(r.cuerpo));
+  assert.equal(r.cuerpo.devengo.estado, 'APLICADO');
+  assert.equal(r.cuerpo.cartera.estado, 'APLICADO');
+  assert.equal(r.cuerpo.cartera.totales.operaciones, 1, 'el credito se califico al corte');
+  assert.deepEqual(await procesos(), { devengos: antes.devengos + 1, carteras: antes.carteras + 1 });
+  // Repetirlo al mismo corte choca con la cartera ya aplicada: el devengo tampoco queda.
+  const otra = await llamar('/api/cartera/cierre-mensual', { metodo: 'POST', token: t.gerente, cuerpo: {} });
+  assert.equal(otra.estado, 409);
+  assert.deepEqual(await procesos(), { devengos: antes.devengos + 1, carteras: antes.carteras + 1 });
+  const { auditarBase } = await import('../tools/auditoria.mjs');
+  assert.deepEqual((await auditarBase(admin)).hallazgos, []);
+});

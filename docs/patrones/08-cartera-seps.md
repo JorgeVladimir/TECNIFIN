@@ -95,7 +95,14 @@ POST /api/cartera/castigos/:credito/recuperacion { monto, origen: CAJA | CUENTA 
   1603 se **queda** (no se reversa a suspenso); (c) reverso contra ingreso en el castigo (frente a provisionar el
   interes por cobrar).
 
-## 10. Pendiente
+## 10. Cierre mensual (2-oct-2026)
 
-Reversion del devengado al pasar a no devenga (si el contador lo pide), refinanciados y reestructurados
-(1405..1408), proceso programado de fin de mes.
+`POST /api/cartera/cierre-mensual { fechaCorte? }` (supervisor): corre el devengo (§9) y el proceso de cartera
+(§3, aplicado) al mismo corte **en una sola transaccion**: si cualquiera de los dos se niega (control contable,
+corte ya procesado), no queda ninguno. Devuelve el resultado de ambos. Para deshacerlo se reversa primero el
+proceso de cartera y luego el devengo, con sus endpoints de siempre.
+
+## 11. Pendiente
+
+Reversion del devengado al pasar a no devenga (si el contador lo pide), reestructurados (preguntas al contador)
+y la programacion automatica del cierre (requiere un usuario tecnico: decision de Christian).
