@@ -106,3 +106,9 @@ export function recalcularTrasAbono(saldo, tasaAnual, n, modalidad, cuotaActual)
   }
   return filas;
 }
+
+// Devengo de intereses por segmento: por cobrar (1603) cuando el credito devenga; en suspenso
+// (cuentas de orden 7109 contra 7209) cuando esta en no devenga.
+export const CUENTA_INTERES_POR_COBRAR = { COMERCIAL: '160305', CONSUMO: '160310', VIVIENDA: '160315', MICROEMPRESA: '160320' };
+export const CUENTA_SUSPENSO = { COMERCIAL: '710905', CONSUMO: '710910', VIVIENDA: '710915', MICROEMPRESA: '710920' };
+export const CUENTA_SUSPENSO_CONTRA = { COMERCIAL: '720905', CONSUMO: '720910', VIVIENDA: '720915', MICROEMPRESA: '720920' };

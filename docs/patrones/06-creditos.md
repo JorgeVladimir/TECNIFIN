@@ -84,8 +84,6 @@ sin base viven en `src/modules/creditos/calculo.js`.
 - El cobro vive en `cobro.js` y el ciclo de otorgamiento en `servicio.js` (regla 4: 500 lineas por archivo).
 
 Pendiente de M3: rubros por cuota (seguro, gastos) como datos, scoring. El abono a capital esta en §6.
-scoring. Luego M6 (cartera SEPS: vencimiento, no devenga, reclasificacion y
-provisiones) reutiliza `calculo.js` y `cuenta_capital`.
 
 ## 6. Abono extraordinario a capital (1-oct-2026, migracion 0028, `src/modules/creditos/abono.js`)
 

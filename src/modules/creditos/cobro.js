@@ -6,7 +6,9 @@ import {
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { cajaAbierta, efectivoValido, mismoValor, totalEfectivo } from '../caja/servicio.js';
-import { CUENTA_INTERES, CUENTA_INTERES_MORA } from './calculo.js';
+import {
+  aTexto, CUENTA_INTERES, CUENTA_INTERES_MORA, CUENTA_INTERES_POR_COBRAR, CUENTA_SUSPENSO, CUENTA_SUSPENSO_CONTRA,
+} from './calculo.js';
 import { crearAbonoCapital, restaurarTabla } from './abono.js';
 
 export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_DECISION }) {
@@ -31,6 +33,7 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
            JOIN tecnifin.creditos cr ON cr.cooperativa_id = ta.cooperativa_id AND cr.credito_id = ta.credito_id
           WHERE ta.credito_id = @id)
        SELECT amortizacion_id, numero_cuota, capital::text AS capital, interes::text AS interes, cuenta_capital, estado,
+              interes_devengado::text AS devengado, interes_suspenso::text AS suspenso,
               greatest(${HOY} - fecha_pago, 0) AS dias_mora, fecha_pago > ${HOY} AS futura,
               inicio <= ${HOY} AND fecha_pago > ${HOY} AS en_curso, greatest(${HOY} - inicio, 0) AS dias_corridos,
               round(capital * @tasa::numeric / 100 * @factor::numeric * greatest(${HOY} - fecha_pago, 0) / @base::numeric, 2)::text AS mora
@@ -60,7 +63,7 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
       tipoDocumento: tipo === 'CANCELACION' ? 'CANCELACION_CREDITO' : 'PAGO_CREDITO', lineas: [
         { codigo: cuentaDebito, tipo: 'D', valor: suma.total, socioId: cr.socio_id },
         ...filas.map(q => ({ codigo: q.cuenta_capital, tipo: 'H', valor: q.capital, socioId: cr.socio_id })),
-        { codigo: CUENTA_INTERES[cr.segmento], tipo: 'H', valor: suma.interes, socioId: cr.socio_id },
+        ...lineasInteres(cr, filas, suma.interes),
         { codigo: CUENTA_INTERES_MORA, tipo: 'H', valor: suma.mora, socioId: cr.socio_id },
       ] });
     await enlazarOrigen(tx, actor, { transaccionId, cuentaId, saldoCuenta, total: suma.total, glosa, asiento });
@@ -90,6 +93,23 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
     return { pago: Number(pago.numero_pago), credito: c, tipo, cuotas: [desde, hasta], capital: suma.capital,
       interes: suma.interes, mora: suma.mora, total: suma.total, origen: via, comprobante, saldoCredito: credito.saldo,
       estadoCredito: credito.estado };
+  }
+
+  // Interes cobrado: lo ya devengado sale de intereses por cobrar (1603) y el resto va a
+  // ingreso (5104). Si se cobra menos de lo devengado (cancelacion anticipada de la cuota en
+  // curso), la diferencia reversa ingreso. Lo reconocido en suspenso se baja de cuentas de orden.
+  function lineasInteres(cr, filas, interesTexto) {
+    const cent = (t) => Math.round(Number(t || 0) * 100);
+    const devengado = filas.reduce((s, q) => s + cent(q.devengado), 0);
+    const suspenso = filas.reduce((s, q) => s + cent(q.suspenso), 0);
+    const ingreso = cent(interesTexto) - devengado;
+    const seg = cr.segmento;
+    return [
+      { codigo: CUENTA_INTERES_POR_COBRAR[seg], tipo: 'H', valor: aTexto(devengado), socioId: cr.socio_id },
+      { codigo: CUENTA_INTERES[seg], tipo: ingreso >= 0 ? 'H' : 'D', valor: aTexto(Math.abs(ingreso)), socioId: cr.socio_id },
+      { codigo: CUENTA_SUSPENSO_CONTRA[seg], tipo: 'D', valor: aTexto(suspenso), socioId: cr.socio_id },
+      { codigo: CUENTA_SUSPENSO[seg], tipo: 'H', valor: aTexto(suspenso), socioId: cr.socio_id },
+    ];
   }
 
   // Lado del dinero de un cobro: efectivo en la caja abierta del cajero (con su comprobante y,
@@ -276,10 +296,6 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
                OR ta.estado <> x.despues->>'estado'`, { q: JSON.stringify(p.cuotas_abono) })).rows[0].n;
         if (distintas) throw new ErrorConflicto('La tabla cambio despues del abono: no se puede anular');
       }
-      const cuotas = esAbono ? [] : (await tx.query(
-        `SELECT capital::text AS capital, cuenta_capital FROM tecnifin.tabla_amortizacion WHERE pago_id = @p`,
-        { p: p.pago_id })).rows;
-      let cuentaDebito;
       if (p.origen === 'CAJA') {
         const t = (await tx.query(
           `SELECT t.transaccion_id, cc.estado FROM tecnifin.transacciones_caja t
@@ -289,30 +305,21 @@ export function crearCobroCreditos({ conRoles, codigoValido, ROLES_COBRO, ROLES_
         await tx.query(
           `UPDATE tecnifin.transacciones_caja SET anulado = true, motivo_anulacion = @m, fecha_anulacion = now(),
                   usuario_anulacion_id = @u WHERE transaccion_id = @t`, { m: razon, u: actor.usuario_id, t: t.transaccion_id });
-        cuentaDebito = (await tx.query(
-          `SELECT valor FROM tecnifin.parametros_cooperativa WHERE clave = 'caja.cuenta_efectivo'`)).rows[0]?.valor || '110105';
       } else {
-        const c = (await tx.query(
-          `UPDATE tecnifin.cuentas SET saldo = saldo + @total::numeric WHERE cuenta_id = @id
-            RETURNING saldo::text AS saldo, (SELECT cuenta_activa FROM tecnifin.productos_financieros pf
-                                               WHERE pf.cooperativa_id = cuentas.cooperativa_id AND pf.producto_id = cuentas.producto_id) AS cuenta_activa`,
-          { total: p.total_t, id: p.cuenta_id })).rows[0];
-        cuentaDebito = c.cuenta_activa;
-        p.saldoCuenta = c.saldo;
+        p.saldoCuenta = (await tx.query(
+          `UPDATE tecnifin.cuentas SET saldo = saldo + @total::numeric WHERE cuenta_id = @id RETURNING saldo::text AS saldo`,
+          { total: p.total_t, id: p.cuenta_id })).rows[0].saldo;
       }
+      // El asiento de anulacion es el inverso exacto del original, linea por linea: cubre capital
+      // por banda, interes devengado (1603) o no, suspenso en orden, mora y abonos sin recalcularlos.
       const glosa = `Anulacion del pago ${numero} del credito ${p.codigo}: ${razon}`;
-      const lineasAbono = esAbono ? (await tx.query(
+      const inversas = (await tx.query(
         `SELECT pc.codigo, CASE d.tipo_asiento WHEN 'D' THEN 'H' ELSE 'D' END AS tipo, d.valor::text AS valor
            FROM tecnifin.detalle_asiento d
            JOIN tecnifin.plan_cuentas pc ON pc.cooperativa_id = d.cooperativa_id AND pc.cuenta_contable_id = d.cuenta_contable_id
-          WHERE d.asiento_id = @a`, { a: p.asiento_id })).rows.map(l => ({ ...l, socioId: p.socio_id })) : null;
+          WHERE d.asiento_id = @a`, { a: p.asiento_id })).rows.map(l => ({ ...l, socioId: p.socio_id }));
       const asiento = await asentar(tx, actor, { concepto: glosa, origenModulo: 'CREDITOS', origenId: p.codigo,
-        tipoDocumento: 'ANULACION_PAGO_CREDITO', lineas: lineasAbono || [
-          ...cuotas.map(q => ({ codigo: q.cuenta_capital, tipo: 'D', valor: q.capital, socioId: p.socio_id })),
-          { codigo: CUENTA_INTERES[p.segmento], tipo: 'D', valor: p.interes_t, socioId: p.socio_id },
-          { codigo: CUENTA_INTERES_MORA, tipo: 'D', valor: p.mora_t, socioId: p.socio_id },
-          { codigo: cuentaDebito, tipo: 'H', valor: p.total_t, socioId: p.socio_id },
-        ] });
+        tipoDocumento: 'ANULACION_PAGO_CREDITO', lineas: inversas });
       if (p.origen === 'CUENTA') {
         await tx.query(
           `INSERT INTO tecnifin.movimientos_cuenta (cuenta_id, tipo, monto, saldo_resultante, concepto, usuario_id, asiento_contable_id)

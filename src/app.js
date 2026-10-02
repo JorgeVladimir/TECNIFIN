@@ -214,6 +214,20 @@ async function rutasCartera(cartera, req, res, url, contexto) {
       ? responder(res, 201, await cartera.recuperar(token, castigo[1], cuerpo, contexto), solicitudId)
       : responder(res, 201, await cartera.castigar(token, castigo[1], cuerpo, contexto), solicitudId);
   }
+  if (p === '/api/cartera/devengo') {
+    if (req.method === 'GET') {
+      return responder(res, 200, await cartera.simularDevengo(tokenBearer(req), url.searchParams.get('fecha'), contexto), solicitudId);
+    }
+    if (req.method === 'POST') {
+      const token = tokenBearer(req);
+      return responder(res, 201, await cartera.aplicarDevengo(token, await leerJson(req), contexto), solicitudId);
+    }
+  }
+  const revDevengo = /^\/api\/cartera\/devengo\/([0-9]{1,15})\/reversar$/.exec(p);
+  if (revDevengo && req.method === 'POST') {
+    const token = tokenBearer(req);
+    return responder(res, 200, await cartera.reversarDevengo(token, revDevengo[1], await leerJson(req), contexto), solicitudId);
+  }
   const rev = /^\/api\/cartera\/procesos\/([0-9]{1,15})\/reversar$/.exec(p);
   if (rev && req.method === 'POST') {
     const token = tokenBearer(req);

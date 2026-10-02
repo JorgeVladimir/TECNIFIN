@@ -69,7 +69,33 @@ cartera para la clasificacion y los reportes.
 
 POST /api/cartera/castigos/:credito/recuperacion { monto, origen: CAJA | CUENTA } (cobro: TELLER y supervisores). Lo cobrado va a 560405 (De activos castigados) y baja el control de orden (D 7203xx / H 710310) en el mismo monto; creditos.monto_castigado y monto_recuperado impiden recuperar mas de lo castigado (CHECK). En caja entra al cuadre como RECUPERACION_CASTIGO. servicio.js de cartera esta en 463 lineas: lo proximo que se agregue va a un archivo propio (regla 4).
 
-## 9. Pendiente
+## 9. Devengo de intereses (1-oct-2026, migracion 0029, `src/modules/cartera/devengo.js`)
 
-Interes devengado y su
-reversion al pasar a no devenga, refinanciados y reestructurados (1405..1408), proceso programado de fin de mes.
+| Endpoint | Rol | Efecto |
+|---|---|---|
+| `GET /api/cartera/devengo?fecha=` | Consulta | Lo que se devengaria al corte, por segmento, y el control contable |
+| `POST /api/cartera/devengo { fechaCorte? }` | Supervisor | Aplica: asiento, `devengo_intereses` y `devengo_cuota` |
+| `POST /api/cartera/devengo/:id/reversar { motivo }` | Supervisor | Solo el ultimo aplicado y solo si ninguna de sus cuotas se cobro o castigo |
+
+- **Monto:** el interes de cada cuota pendiente se reconoce lineal por dias del periodo (desde la cuota anterior
+  o el desembolso hasta su fecha de pago); una cuota ya vencida, completo. Cada corrida suma solo la diferencia con
+  lo ya reconocido (`interes_devengado + interes_suspenso`): repetirla al mismo corte no mueve nada, y un corte
+  anterior al ultimo aplicado se rechaza.
+- **Destino:** credito sin cuotas vencidas -> D 1603xx / H 5104xx del segmento. Credito con alguna vencida (mismo
+  criterio que la clasificacion: no devenga) -> D 7109xx / H 7209xx (intereses en suspenso, cuentas de orden).
+- **Control:** antes de aplicar, el mayor de cada 1603xx y 7109xx debe ser igual a lo acumulado en las cuotas
+  pendientes de creditos vigentes; si no, 409.
+- **Cobro (creditos/cobro.js):** del interes cobrado, lo devengado sale de 1603 y solo el resto va a 5104 (si se
+  cobra menos de lo devengado, como en la cancelacion anticipada de la cuota en curso, la diferencia reversa
+  ingreso); el suspenso se baja de orden (D 7209xx / H 7109xx).
+- **Anulacion de pagos:** desde 0029 el asiento de anulacion es el **inverso exacto del original**, linea por linea
+  (antes se reconstruia; ahora cubre devengo, suspenso, mora y abonos sin recalcular).
+- **Castigo:** el devengado no cobrado se reversa contra el ingreso (D 5104xx / H 1603xx) y el suspenso sale de orden.
+- **Contador:** validar (a) devengo lineal por dias del periodo; (b) que al pasar a no devenga lo ya devengado en
+  1603 se **queda** (no se reversa a suspenso); (c) reverso contra ingreso en el castigo (frente a provisionar el
+  interes por cobrar).
+
+## 10. Pendiente
+
+Reversion del devengado al pasar a no devenga (si el contador lo pide), refinanciados y reestructurados
+(1405..1408), proceso programado de fin de mes.

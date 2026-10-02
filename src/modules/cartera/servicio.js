@@ -19,8 +19,12 @@ import {
   auditarProceso, crearAutenticador, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
-import { aTexto, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA } from '../creditos/calculo.js';
+import {
+  aTexto, bandasDesdePlan, cuentaPorBanda, CUENTA_INTERES, CUENTA_INTERES_POR_COBRAR, CUENTA_SUSPENSO, CUENTA_SUSPENSO_CONTRA,
+  FAMILIA_CARTERA,
+} from '../creditos/calculo.js';
 import { cajaAbierta, efectivoValido, mismoValor, montoValido, totalEfectivo } from '../caja/servicio.js';
+import { crearDevengo } from './devengo.js';
 
 const ROLES_CONSULTA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
 const ROLES_APLICA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
@@ -348,7 +352,8 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
       if (!cr) return { error: new ErrorNoEncontrado() };
       if (cr.estado !== 'VIGENTE') throw new ErrorConflicto(`El credito esta ${cr.estado}`);
       const cuotas = (await tx.query(
-        `SELECT amortizacion_id, capital::text AS capital, cuenta_capital, fecha_pago < ${HOY} AS vencida
+        `SELECT amortizacion_id, capital::text AS capital, cuenta_capital, fecha_pago < ${HOY} AS vencida,
+                interes_devengado::text AS devengado, interes_suspenso::text AS suspenso
            FROM tecnifin.tabla_amortizacion WHERE credito_id = @id AND estado IN ('PENDIENTE', 'VENCIDA')
           ORDER BY numero_cuota FOR UPDATE`, { id: cr.credito_id })).rows;
       if (!cuotas.some(q => q.vencida)) throw new ErrorConflicto('Solo se castiga cartera vencida');
@@ -363,12 +368,21 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
       }
       const orden = { COMERCIAL: '720305', CONSUMO: '720310', VIVIENDA: '720315', MICROEMPRESA: '720320' }[cr.segmento];
       const total = aTexto(saldo);
+      // El interes devengado y no cobrado se reversa contra el ingreso y el suspenso sale de orden:
+      // el credito castigado ya no genera intereses por cobrar (patron 08 §7; lo valida el contador).
+      const devengado = aTexto(cuotas.reduce((s, q) => s + centavos(q.devengado), 0));
+      const suspenso = aTexto(cuotas.reduce((s, q) => s + centavos(q.suspenso), 0));
+      const seg = cr.segmento;
       const asiento = await asentar(tx, actor, { concepto: `Castigo del credito ${c}: ${razon}`.slice(0, 300),
         origenModulo: 'CREDITOS', origenId: c, tipoDocumento: 'CASTIGO_CARTERA', lineas: [
           { codigo: cuentaProvision, tipo: 'D', valor: total, socioId: cr.socio_id },
           ...cuotas.map(q => ({ codigo: q.cuenta_capital, tipo: 'H', valor: q.capital, socioId: cr.socio_id })),
           { codigo: '710310', tipo: 'D', valor: total, socioId: cr.socio_id },
           { codigo: orden, tipo: 'H', valor: total, socioId: cr.socio_id },
+          { codigo: CUENTA_INTERES[seg], tipo: 'D', valor: devengado, socioId: cr.socio_id },
+          { codigo: CUENTA_INTERES_POR_COBRAR[seg], tipo: 'H', valor: devengado, socioId: cr.socio_id },
+          { codigo: CUENTA_SUSPENSO_CONTRA[seg], tipo: 'D', valor: suspenso, socioId: cr.socio_id },
+          { codigo: CUENTA_SUSPENSO[seg], tipo: 'H', valor: suspenso, socioId: cr.socio_id },
         ] });
       await tx.query(`UPDATE tecnifin.tabla_amortizacion SET estado = 'CASTIGADA' WHERE amortizacion_id = ANY(@ids::bigint[])`,
         { ids: cuotas.map(q => q.amortizacion_id) });
@@ -459,5 +473,5 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
     });
   }
 
-  return { consultar, procesar, reversar, castigar, recuperar };
+  return { consultar, procesar, reversar, castigar, recuperar, ...crearDevengo({ conRoles, saldosContables, fechaCorteValida }) };
 }

@@ -82,9 +82,9 @@ test('el esquema cumple sus invariantes y la aplicacion no es duena ni tiene BYP
       WHERE relnamespace = 'tecnifin'::regnamespace AND relkind = 'r'`, { dueno });
   // 45 = las 40 de DAT-01/DAT-02, parametros_cooperativa y recuperaciones_clave (APP-01) descuentos_credito y pagos_credito (M3) y reclasificacion_cuota (M6) y pagos_interes_dpf (M4). Si cambia, se actualiza el
   // inventario de ADR-0003 a la vez.
-  assert.deepEqual(catalogo.rows[0], { total: 46, ajenas: 0, sin_force: 0 },
+  assert.deepEqual(catalogo.rows[0], { total: 48, ajenas: 0, sin_force: 0 },
     'toda tabla del esquema es del dueno y lleva FORCE, sin excepciones');
-  assert.equal(tablas.length, 44, 'solo cooperativas y parametros_plataforma son de plataforma');
+  assert.equal(tablas.length, 46, 'solo cooperativas y parametros_plataforma son de plataforma');
 
   const rol = await admin.query(
     `SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = @rol`,
