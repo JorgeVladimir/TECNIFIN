@@ -10,14 +10,15 @@ import {
 export {
   ErrorAutorizacion, ErrorCambioClavePendiente, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
+import { ROLES_ADMIN, TODOS_LOS_ROLES } from '../../platform/roles.js';
 
 export class ErrorConfiguracion extends Error {
   constructor() { super('Configuracion de autenticacion incompleta'); this.name = 'ErrorConfiguracion'; this.statusCode = 503; }
 }
 
-const ROLES_ADMIN_USUARIOS = new Set(['SUPER_USER', 'ADMIN']);
+const ROLES_ADMIN_USUARIOS = ROLES_ADMIN;
 // Mismo conjunto que ck_usuarios_rol: validar aqui da un 400 claro en vez de un error de la base.
-const ROLES_VALIDOS = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER', 'TELLER', 'MEMBER']);
+const ROLES_VALIDOS = TODOS_LOS_ROLES;
 const CLAVE_MINIMA = 10;
 
 // Un ADMIN administra a todos salvo a SUPER_USER: ni lo toca ni lo crea. Asi nadie se

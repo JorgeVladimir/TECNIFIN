@@ -26,9 +26,10 @@ import {
 import { montoValido } from '../caja/servicio.js';
 import { debitarOrigen, enlazarOrigen, entradaOrigen } from '../caja/origen.js';
 import { crearDevengo } from './devengo.js';
+import { ROLES_ANALISIS, ROLES_CAJA, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_CONSULTA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
-const ROLES_APLICA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_CONSULTA = ROLES_ANALISIS;
+const ROLES_APLICA = ROLES_SUPERVISOR;
 const GASTO_PROVISION = { COMERCIAL: '440205', CONSUMO: '440210', VIVIENDA: '440215', MICROEMPRESA: '440220' };
 const CUENTA_REVERSION_PROVISION = '560410';
 
@@ -398,7 +399,7 @@ export function crearServicioCartera({ db, jwt, alertar = async () => {} }) {
 
   // Recuperacion de un credito castigado: lo cobrado va a ingreso (560405 De activos castigados)
   // y baja el control de orden en el mismo monto. Nunca mas de lo castigado pendiente.
-  const ROLES_COBRO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
+  const ROLES_COBRO = ROLES_CAJA;
   async function recuperar(token, codigo, { monto, origen = 'CAJA', numeroCuenta, efectivo } = {}, contexto = {}) {
     const c = String(codigo || '').toUpperCase();
     if (!/^CRED-[0-9]{6,12}$/.test(c)) throw new ErrorSolicitud('Codigo de credito invalido');

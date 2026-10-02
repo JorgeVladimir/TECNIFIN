@@ -13,10 +13,9 @@ import {
   auditarProceso, crearAutenticador, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
 import { asentar as asentarComun, HOY } from '../../platform/contabilidad.js';
+import { ROLES_CAJA, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_CAJA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
 // La anulacion la hace un supervisor, no quien cobro: separacion de funciones.
-const ROLES_SUPERVISOR = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
 const TIPOS = { DEPOSITO: 'DEPOSITO_AHORROS', RETIRO: 'RETIRO_AHORROS' };
 const CUENTA_EFECTIVO_DEFECTO = '110105';
 

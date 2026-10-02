@@ -7,9 +7,9 @@ import { identificacionValida, TIPOS_IDENTIFICACION } from '../../platform/ident
 import {
   auditar, auditarProceso, crearAutenticador, ErrorConflicto, ErrorNoEncontrado, ErrorSolicitud,
 } from '../../platform/autenticacion.js';
+import { ROLES_ATENCION, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
 // Personal que atiende socios. MEMBER (el propio socio) entra por el canal en linea, no por aqui.
-const ROLES_ATENCION = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER', 'TELLER']);
 const TIPOS_PERSONA = new Set(['SOCIO', 'CLIENTE', 'CLIENTE_EXTERNO']);
 const ESTADOS_CIVILES = new Set(['SOLTERO', 'CASADO', 'DIVORCIADO', 'VIUDO', 'UNION_LIBRE']);
 const CON_CONYUGE = new Set(['CASADO', 'UNION_LIBRE']);
@@ -353,7 +353,7 @@ export function crearServicioSocios({ db, jwt, alertar = async () => {} }) {
 
   // Estado del socio: solo gerencia y administracion, con motivo. Un socio no se inactiva
   // (retiro) mientras tenga saldo: primero se liquidan sus cuentas.
-  const ROLES_ESTADO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+  const ROLES_ESTADO = ROLES_SUPERVISOR;
   const ESTADOS_SOCIO = new Set(['ACTIVO', 'INACTIVO', 'BLOQUEADO', 'FALLECIDO']);
   async function cambiarEstadoSocio(token, numeroSocio, { estado, motivo } = {}, contexto = {}) {
     const numero = numeroPositivo(numeroSocio, 'numero de socio');

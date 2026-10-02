@@ -15,9 +15,10 @@ import { asentar, lineasInversas } from '../../platform/contabilidad.js';
 import {
   aTexto, CUENTA_INTERES, CUENTA_INTERES_POR_COBRAR, CUENTA_SUSPENSO, CUENTA_SUSPENSO_CONTRA,
 } from '../creditos/calculo.js';
+import { ROLES_ANALISIS, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_CONSULTA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
-const ROLES_APLICA = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_CONSULTA = ROLES_ANALISIS;
+const ROLES_APLICA = ROLES_SUPERVISOR;
 const cent = (t) => Math.round(Number(t || 0) * 100);
 
 export function crearDevengo({ conRoles, saldosContables, fechaCorteValida }) {

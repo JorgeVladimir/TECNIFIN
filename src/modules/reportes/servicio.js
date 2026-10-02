@@ -12,8 +12,9 @@
 import { crearAutenticador, ErrorSolicitud } from '../../platform/autenticacion.js';
 import { HOY } from '../../platform/contabilidad.js';
 import { clasificar } from '../cartera/servicio.js';
+import { ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_REPORTES = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_REPORTES = ROLES_SUPERVISOR;
 const ACREEDORAS = new Set(['PASIVO', 'PATRIMONIO', 'INGRESO']);
 const PREFIJOS_CARTERA_BRUTA = Array.from({ length: 28 }, (_, i) => String(1401 + i));
 const PREFIJOS_IMPRODUCTIVA = [...Array.from({ length: 8 }, (_, i) => String(1411 + i)), ...Array.from({ length: 8 }, (_, i) => String(1421 + i))];

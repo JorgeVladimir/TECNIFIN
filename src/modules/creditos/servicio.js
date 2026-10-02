@@ -16,11 +16,11 @@ import { generarRubros, simularRubros } from './rubros.js';
 import {
   amortizacionFrancesa, aTexto, bandasDesdePlan, cuentaPorBanda, FAMILIA_CARTERA, tablaEnTexto,
 } from './calculo.js';
+import { ROLES_ANALISIS, ROLES_CAJA, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_ANALISIS = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'CREDIT_OFFICER']);
 // Cobra quien opera caja (el pago por debito tambien lo registra ventanilla).
-const ROLES_COBRO = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
-const ROLES_DECISION = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_COBRO = ROLES_CAJA;
+const ROLES_DECISION = ROLES_SUPERVISOR;
 const CERTIFICADO_MINIMO_DEFECTO = '1.00';
 
 const codigoValido = (valor, prefijo) => {

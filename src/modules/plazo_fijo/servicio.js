@@ -16,9 +16,9 @@ import {
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { montoValido } from '../caja/servicio.js';
 import { crearPagoIntereses, DIAS_PERIODO, pagadoDe } from './intereses.js';
+import { ROLES_CAJA, ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_OPERACION = new Set(['SUPER_USER', 'ADMIN', 'MANAGER', 'TELLER']);
-const ROLES_SUPERVISOR = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_OPERACION = ROLES_CAJA;
 const RENOVACION = new Set(['NO_RENOVAR', 'AUTOMATICO', 'MANUAL']);
 const MODALIDADES = new Set(['AL_VENCIMIENTO', ...Object.keys(DIAS_PERIODO)]);
 // Parametros por cooperativa y su valor por defecto (el del sistema anterior). La retencion

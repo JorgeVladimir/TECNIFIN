@@ -11,7 +11,7 @@
 - Traspaso Claude/Codex: `AGENTS.md`, `docs/roles/`, `docs/handoff/`, `npm run estado`, `npm run verificar`, agentes de Codex en `.codex/agents/`.
 - Correcciones mecánicas DAT-01/02: ALTO 2-3 y MEDIO 4-7 cerrados con migración 0014 y 51 pruebas; ALTO 1 sigue reservado a ADR-0002.
 - APP-01 patrón: login JWT, usuarios por rol/tenant, auditoría, configuración por cooperativa y detección/alerta de desvío; migración 0015 y patrón 03 (fusionado en main el 29-sep).
-- Catalogo de la API (2-oct): docs/api/CATALOGO.md con las 67 rutas por modulo, roles y efecto; tests/api-catalogo.integration.test.mjs comprueba contra la app real que cada ruta existe y que las no publicas exigen token. 192 pruebas.
+- Catalogo de la API (2-oct): docs/api/CATALOGO.md con las 68 rutas por modulo, roles y efecto; tests/api-catalogo.integration.test.mjs comprueba contra la app real que cada ruta existe y que las no publicas exigen token. 192 pruebas.
 - M6 cierre mensual (2-oct): POST /api/cartera/cierre-mensual corre devengo y proceso de cartera al mismo corte en una sola transaccion (todo o nada); los cuerpos de ambos se extrajeron (ejecutarProceso, aplicarDevengoEn) para reutilizarlos; 190 pruebas.
 - Endurecimiento (2-oct, Fase 5 adelantada): bloqueo de cuenta por intentos fallidos parametrizable por cooperativa, sin enumeracion de usuarios, alerta al bloquear, desbloqueo al restablecer clave; cabeceras de seguridad en toda respuesta; migracion 0031; 6 pruebas (189).
 - Operacion (2-oct, regla 10): tools/respaldo.mjs (pg_dump, restauracion en base temporal con conteos y auditoria, poda), deploy/programar-respaldo.ps1 (tarea diaria SYSTEM) y tools/preflight.mjs (BLOQUEA/AVISO/OK). 183 pruebas.

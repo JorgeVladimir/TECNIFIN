@@ -6,8 +6,9 @@ import {
 } from '../../platform/autenticacion.js';
 import { asentar, HOY } from '../../platform/contabilidad.js';
 import { montoValido } from '../caja/servicio.js';
+import { ROLES_SUPERVISOR } from '../../platform/roles.js';
 
-const ROLES_CONTABLES = new Set(['SUPER_USER', 'ADMIN', 'MANAGER']);
+const ROLES_CONTABLES = ROLES_SUPERVISOR;
 // Cuentas de naturaleza acreedora: su saldo se lee Haber - Debe.
 const ACREEDORAS = new Set(['PASIVO', 'PATRIMONIO', 'INGRESO']);
 
